@@ -154,6 +154,7 @@ export function ReviewWorkspace() {
 
   const stageIndex = STAGES.indexOf(data.job.stage)
   const finished = data.job.status === "completed"
+  const stopped = data.job.status === "failed" || data.job.status === "budget_exhausted"
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -171,7 +172,7 @@ export function ReviewWorkspace() {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => router.push(`/reviews/${id}/trace`)}>Trace</Button>
           <Button variant="outline" size="sm" onClick={() => router.push(`/reviews/${id}/validation`)}>Validation</Button>
-          {data.job.status === "failed" || data.job.status === "completed" ? (
+          {stopped || data.job.status === "completed" ? (
             <Button variant="outline" size="sm" onClick={retry}>Retry</Button>
           ) : null}
           <Button size="sm" onClick={publish} disabled={data.job.status !== "completed"}>Publish report</Button>
@@ -184,6 +185,7 @@ export function ReviewWorkspace() {
           </li>
         ))}
         {data.job.status === "failed" ? <li className="text-destructive">failed</li> : null}
+        {data.job.status === "budget_exhausted" ? <li className="text-destructive">budget exhausted</li> : null}
       </ol>
       {data.job.error ? <p className="border-b px-4 py-2 text-sm text-destructive">{data.job.error}</p> : null}
       {data.job.status === "queued" || data.job.status === "running" ? (

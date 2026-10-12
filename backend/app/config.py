@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     github_app_private_key: str | None = None
     github_app_private_key_path: str | None = None
     llm_provider: str = "mock"
+    llm_model: str = "gpt-4.1-mini"
+    llm_timeout_seconds: int = 20
+    llm_max_calls: int = 2
+    llm_max_input_chars: int = 24_000
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     sandbox_driver: str = "subprocess"  # subprocess | docker

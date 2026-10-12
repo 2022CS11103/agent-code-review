@@ -41,7 +41,7 @@ export default function EvaluationsPage() {
     <PageFrame
       eyebrow="Measured quality"
       title="Evaluation"
-      note="Precision and recall describe the builtin rule suite on labeled fixtures. They are not a claim about novel bugs or a hosted model."
+      note="Each run records the builtin rule suite and a scripted model-response suite. Neither suite calls a hosted model, and neither score is a claim about novel bugs."
       actions={
         <Button size="sm" onClick={run} disabled={pending}>
           {pending ? "Running…" : "Run fixture suite"}

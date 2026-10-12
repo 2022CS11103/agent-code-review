@@ -212,6 +212,50 @@ def _severity_rank(value: str) -> int:
     return {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}.get(value, 0)
 
 
+def merge_static_and_model(static: list[AnalysisFinding], model_findings: list[dict]) -> list[dict]:
+    """Keep static findings. Add model findings only on lines the static pass did not already report."""
+    static_lines = {(item.file_path, item.start_line) for item in static}
+    grouped: dict[tuple[str, int], list[dict]] = {}
+    for item in model_findings:
+        grouped.setdefault((item["file_path"], item["start_line"]), []).append(item)
+    merged = []
+    for item in static:
+        notes = grouped.get((item.file_path, item.start_line), [])
+        note = (
+            notes[0].get("agent_note")
+            if notes
+            else "Static result retained. No validated model finding cited this line."
+        )
+        merged.append(
+            {
+                **_public_finding(item),
+                "agent_note": note,
+                "source": "hybrid" if notes else "static",
+                "agent": notes[0].get("category") if notes else None,
+            }
+        )
+    seen: set[tuple[str, int, str]] = set()
+    for item in model_findings:
+        key = (item["file_path"], item["start_line"], item.get("category") or "")
+        if (item["file_path"], item["start_line"]) in static_lines or key in seen:
+            continue
+        seen.add(key)
+        merged.append({**item, "source": "model"})
+    return merged
+
+
+def static_findings_after_provider_failure(static: list[AnalysisFinding]) -> list[dict]:
+    return [
+        {
+            **_public_finding(item),
+            "agent_note": "Static result retained because the model provider did not complete a validated review.",
+            "source": "static",
+            "agent": None,
+        }
+        for item in static
+    ]
+
+
 def merge_static_and_agents(static: list[AnalysisFinding], agent_findings: list[dict]) -> list[dict]:
     """Static findings survive even when an agent omits them."""
     by_key = {item["stable_key"]: item for item in agent_findings}

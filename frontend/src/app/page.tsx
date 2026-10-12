@@ -109,7 +109,7 @@ export default function CommandPage() {
                         <span>
                           {item.job.status}
                           <span className="mt-0.5 block text-muted-foreground">{item.job.origin}</span>
-                          {item.job.status === "failed" ? (
+                          {item.job.status === "failed" || item.job.status === "budget_exhausted" ? (
                             <button
                               type="button"
                               className="mt-1 block underline"

@@ -310,7 +310,17 @@ export type AuditItem = {
 export type SettingsView = {
   demo_mode: boolean
   workspace: { id: string; name: string; demo: boolean }
-  llm: { active_provider: string; openai_configured: boolean; note: string }
+  llm: {
+    active_provider: string
+    configured_provider: string
+    model: string
+    openai_configured: boolean
+    timeout_seconds: number
+    max_calls: number
+    max_input_chars: number
+    note: string
+    workspace_isolation: string
+  }
   sandbox: { driver: string; image: string; limitations: string }
   github: {
     api_base: string

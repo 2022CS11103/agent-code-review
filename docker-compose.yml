@@ -37,6 +37,8 @@ services:
       PRISM_DEMO_MODE: "true"
       PRISM_AUTO_SEED: "true"
       PRISM_LLM_PROVIDER: mock
+      PRISM_LLM_TIMEOUT_SECONDS: "20"
+      PRISM_LLM_MAX_CALLS: "2"
       PRISM_SANDBOX_DRIVER: subprocess
       PRISM_ALLOWED_ORIGINS: http://127.0.0.1:43123,http://localhost:43123
       PRISM_GITHUB_WEBHOOK_SECRET: replace-with-a-long-random-secret
@@ -55,6 +57,8 @@ services:
       PRISM_AUTO_SEED: "false"
       PRISM_DEMO_MODE: "true"
       PRISM_LLM_PROVIDER: mock
+      PRISM_LLM_TIMEOUT_SECONDS: "20"
+      PRISM_LLM_MAX_CALLS: "2"
       PRISM_SANDBOX_DRIVER: subprocess
       PRISM_GITHUB_WEBHOOK_SECRET: replace-with-a-long-random-secret
     depends_on:

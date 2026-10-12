@@ -27,7 +27,7 @@ from app.services.actions import (
     edit_patch,
     publish_report,
 )
-from app.services.evaluation import run_evaluation
+from app.services.evaluation import run_evaluation, run_structured_provider_evaluation
 from app.services.queries import (
     _evaluation,
     _event,
@@ -248,7 +248,7 @@ def retry_review(
     db: Session = Depends(db_session),
 ) -> dict:
     job = _job_or_404(db, workspace, job_id)
-    if job.status not in {"failed", "completed"}:
+    if job.status not in {"failed", "completed", "budget_exhausted"}:
         raise APIError(409, "not_retryable", "Only a finished review can be retried.")
     pull = db.get(PullRequest, job.pull_request_id)
     fresh, created = create_review(db, pull, workspace_id=workspace.id, trigger="retry", origin="live")
@@ -462,6 +462,7 @@ def list_evaluations(workspace: Workspace = Depends(current_workspace), db: Sess
 @router.post("/evaluations", status_code=201)
 def create_evaluation(workspace: Workspace = Depends(current_workspace), db: Session = Depends(db_session)) -> dict:
     run = run_evaluation(db, workspace.id, get_settings().llm_provider)
+    run_structured_provider_evaluation(db, workspace.id)
     return _evaluation(run)
 
 
@@ -482,11 +483,7 @@ def settings_view(workspace: Workspace = Depends(current_workspace)) -> dict:
     return {
         "demo_mode": settings.demo_mode,
         "workspace": {"id": workspace.id, "name": workspace.name, "demo": workspace.demo},
-        "llm": {
-            "active_provider": "deterministic-mock" if settings.llm_provider == "mock" else settings.llm_provider,
-            "openai_configured": bool(settings.openai_api_key),
-            "note": "This build runs the deterministic mock provider. It does not call a hosted model unless a future provider adapter is enabled.",
-        },
+        "llm": _llm_settings(settings),
         "sandbox": {
             "driver": settings.sandbox_driver,
             "image": settings.sandbox_image,
@@ -554,6 +551,17 @@ async def github_webhook(request: Request, db: Session = Depends(db_session)) ->
     )
     db.commit()
     return {"ok": True, "duplicate": False, "job_id": job_id, "outcome": outcome}
+
+
+def _llm_settings(settings) -> dict:
+    from app.providers.registry import llm_view
+
+    view = llm_view(settings)
+    secret = settings.openai_api_key or ""
+    encoded = str(view)
+    if secret and secret in encoded:
+        raise RuntimeError("Settings view included the model API key")
+    return view
 
 
 def _github_settings(settings) -> dict:

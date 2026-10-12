@@ -107,7 +107,7 @@ def command_center(db: Session, workspace: Workspace, origin: str | None) -> dic
         "metrics": {
             "median_review_seconds": statistics.median(durations) if durations else None,
             "completed_reviews": sum(1 for job in jobs if job.status == "completed"),
-            "failed_reviews": sum(1 for job in jobs if job.status == "failed"),
+            "failed_reviews": sum(1 for job in jobs if job.status in {"failed", "budget_exhausted"}),
             "running_reviews": sum(1 for job in jobs if job.status in {"queued", "running"}),
             "confirmed_rate": (len(confirmed) / len(decided)) if decided else None,
             "decisions": len(decided),

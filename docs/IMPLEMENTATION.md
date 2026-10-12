@@ -11,6 +11,7 @@ Status is what has been run, not what the product spec hoped for.
 - Builtin rules: SQL injection, `shell=True`, hardcoded secret, `eval`/`exec`, `pickle.loads`, float currency, query-in-loop, missing auth, test gap.
 - Ruff S-rules where Ruff is installed. `S101` ignored. Semgrep status recorded, not faked.
 - LangGraph fan-out: supervisor, security, correctness, performance, tests, remediation. Structured outputs. Deduped with static findings.
+- Review provider interface. The default deterministic provider makes no model call. An OpenAI-compatible provider validates JSON findings, bounds calls and input size, and records budget exhaustion as its own job status. Tests use a mocked HTTP transport. A live model API was not called.
 - Patch proposals for SQL, secret, and shell. Declines for auth, currency, N+1, test gap, and pickle. Repair cap of 3. Secret empty-default repair is a real second attempt.
 - Subprocess validation for demo fixtures, including the SQL harness (baseline fails, patched test passes). Docker argument builder unit-tested. Untrusted repos are not executed.
 - Human confirm, dismiss, reanalyze, patch edit, accept, reject, local report. Accept cannot modify the repo.
@@ -24,7 +25,7 @@ Status is what has been run, not what the product spec hoped for.
 ## Not done
 
 - A live GitHub App round trip. The code path is tested against a mock API only.
-- Hosted LLM provider. The mock is the only executor.
+- A live model API call. The OpenAI-compatible client is implemented and tested against a mock transport. No API key was used against a hosted model.
 - Redis/ARQ queue. The worker polls the database. Redis in Compose is unused.
 - Postgres exercised in this environment. Compose was not started. `psycopg` 3.3.6 is pinned for that URL.
 - Docker sandbox execution. No daemon here, and Compose does not pass the socket.
@@ -33,7 +34,8 @@ Status is what has been run, not what the product spec hoped for.
 
 ## Phase order from here
 
-1. Verify the GitHub App against a dedicated test repository once credentials exist. The mocked flow is in `backend/tests/test_github_app.py`.
-2. Put a real provider behind the existing Pydantic schemas without letting it override policy.
-3. Run untrusted pull-request tests in disposable, resource-limited containers. The subprocess driver still refuses `trust_tier=untrusted`.
-4. Extend the evaluation set beyond the builtin rule fixtures and record patch success, latency, and cost for that set.
+1. Verify the GitHub App against a private test repository once App credentials exist. The mocked flow is in `backend/tests/test_github_app.py`. Provider work did not change delivery, dedupe, or the pinned-SHA check.
+2. Call the OpenAI-compatible provider with a real key on a demo fixture and compare its validated findings with the scripted suite in `model-structured-v1`. Do not turn that on for automatic patches.
+3. Run untrusted pull-request tests in disposable, resource-limited containers. The subprocess driver still refuses `trust_tier=untrusted`. Model findings do not execute code.
+4. Extend the evaluation set beyond the builtin rule fixtures and the scripted model responses. Record patch success, latency, and cost only after findings are reliable.
+5. Before more than the demo workspace can sign in, map each GitHub installation to an authorized workspace and repository. Installations currently share `prism-demo`.

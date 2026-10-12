@@ -38,13 +38,18 @@ export default function SettingsPage() {
           <List
             rows={[
               ["Active provider", data.llm.active_provider],
+              ["Model", data.llm.model],
               ["OpenAI key configured", String(data.llm.openai_configured)],
+              ["Timeout", `${data.llm.timeout_seconds}s`],
+              ["Call budget", String(data.llm.max_calls)],
+              ["Input budget", `${data.llm.max_input_chars} characters`],
               ["Analyzer", data.analyzer_version],
               ["Prompt version", data.prompt_version],
               ["Repair cap", String(data.repair_cap)],
             ]}
           />
           <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{data.llm.note}</p>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{data.llm.workspace_isolation}</p>
         </Section>
         <Section title="Sandbox">
           <List

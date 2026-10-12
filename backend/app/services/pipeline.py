@@ -15,7 +15,11 @@ from pathlib import Path
 from sqlalchemy import func, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.agents.graph import merge_static_and_agents, run_review_graph
+from app.agents.graph import (
+    merge_static_and_agents,
+    merge_static_and_model,
+    static_findings_after_provider_failure,
+)
 from app.clock import utcnow
 from app.config import get_settings
 from app.intelligence.analyzer import analyze_files, analyze_source, coverage_gap
@@ -37,9 +41,11 @@ from app.models import (
     TestResult,
     ValidationRun,
 )
+from app.providers.base import FileSlice, ReviewContext
+from app.providers.registry import build_provider
 from app.redact import redact_text
 from app.services.sandbox import SuiteResult, run_pytest, write_tree
-from app.versions import ANALYZER_VERSION, PROMPT_VERSION, RATE_CARD
+from app.versions import ANALYZER_VERSION, PROMPT_VERSION, PROVIDER_PROMPT_VERSION
 
 log = logging.getLogger("prism.pipeline")
 
@@ -163,9 +169,10 @@ def _run(db: Session, job: ReviewJob) -> None:
         "scanner_notes": report.scanner_notes,
         "analyzer_version": ANALYZER_VERSION,
     }
+    provider = build_provider(settings)
     job.analyzer_version = ANALYZER_VERSION
-    job.prompt_version = PROMPT_VERSION
-    job.model_provider = "deterministic-mock" if settings.llm_provider == "mock" else settings.llm_provider
+    job.prompt_version = PROMPT_VERSION if provider.kind == "mock" else PROVIDER_PROMPT_VERSION
+    job.model_provider = provider.label
     db.commit()
     _pause(settings)
     _emit(
@@ -186,11 +193,33 @@ def _run(db: Session, job: ReviewJob) -> None:
         )
 
     sources = {item["path"]: item["content"] for item in prepared if item["content"]}
-    state = run_review_graph(report.findings, sources, report.markers)
-    merged = merge_static_and_agents(report.findings, state.get("deduped") or [])
-    job.plan = state.get("plan")
-    traces = state.get("traces") or []
-    usage = _usage(traces)
+    context = ReviewContext(
+        title=pr.title,
+        body=pr.body or "",
+        files=[
+            FileSlice(
+                path=item["path"],
+                content=item["content"],
+                language=item["language"],
+                changed_lines=set(item["changed_lines"]),
+            )
+            for item in prepared
+            if item["content"] and not item["file"].skipped_reason and not is_excluded(item["path"], policy.exclude_globs or [])
+        ],
+        sources=sources,
+        markers=report.markers,
+        static_findings=report.findings,
+    )
+    result = provider.review(context)
+    if provider.kind == "mock" and result.status == "completed":
+        merged = merge_static_and_agents(report.findings, result.findings)
+    elif result.status == "completed":
+        merged = merge_static_and_model(report.findings, result.findings)
+    else:
+        merged = static_findings_after_provider_failure(report.findings)
+    job.plan = result.plan
+    traces = result.traces
+    usage = result.usage
     job.usage = usage
     for trace in traces:
         db.add(
@@ -206,7 +235,7 @@ def _run(db: Session, job: ReviewJob) -> None:
                 token_input=trace["token_input"],
                 token_output=trace["token_output"],
                 estimated_cost_usd=trace["estimated_cost_usd"],
-                billed=False,
+                billed=bool(trace.get("billed")),
                 retry_count=trace["retry_count"],
                 error=trace["error"],
                 correlation_id=job.correlation_id,
@@ -245,36 +274,88 @@ def _run(db: Session, job: ReviewJob) -> None:
         )
         db.add(row)
         db.flush()
-        static = next(found for found in report.findings if found.stable_key == item["stable_key"]) if any(
-            found.stable_key == item["stable_key"] for found in report.findings
-        ) else None
-        snippet = redact_text(static.snippet if static else "", limit=500)
+        static = next((found for found in report.findings if found.stable_key == item["stable_key"]), None)
+        if static is not None:
+            snippet = redact_text(static.snippet, limit=500)
+            kind = "static_rule" if row.source != "ruff" else "scanner"
+            detail = f"{ANALYZER_VERSION}:{row.rule_id}"
+        else:
+            snippet = redact_text(item.get("snippet") or "", limit=500)
+            kind = "model_citation"
+            detail = "Cited lines were checked against the fetched file. The model did not execute the code."
         db.add(
             Evidence(
                 finding_id=row.id,
-                kind="static_rule" if row.source != "ruff" else "scanner",
+                kind=kind,
                 file_path=row.file_path,
                 start_line=row.start_line,
                 end_line=row.end_line,
                 snippet=snippet,
-                detail=f"{ANALYZER_VERSION}:{row.rule_id}",
+                detail=detail,
                 trusted=True,
             )
         )
         finding_rows[row.stable_key] = row
     db.commit()
     _pause(settings)
+    if provider.kind == "mock":
+        agent_message = f"Specialists adopted {len(merged)} findings. Commentary is labeled separately from static evidence."
+    elif result.status != "completed":
+        agent_message = result.error or "Model provider did not complete a validated review."
+    else:
+        agent_message = (
+            f"Validated {len(result.findings)} model findings. {len(result.rejected)} were rejected. "
+            "Remediation was not run."
+        )
     _emit(
         db,
         job,
         "agents",
-        f"Specialists adopted {len(merged)} findings. Commentary is labeled separately from static evidence.",
+        agent_message,
         agent="supervisor",
-        payload={"provider": job.model_provider, "billed": False, "usage": usage},
+        level="error" if result.status != "completed" else "info",
+        payload={
+            "provider": job.model_provider,
+            "billed": bool(usage.get("billed")),
+            "calls": result.calls,
+            "status": result.status,
+            "usage": usage,
+        },
     )
+    if result.status != "completed":
+        job.status = "budget_exhausted" if result.status == "budget_exhausted" else "failed"
+        job.stage = result.status
+        job.error = redact_text(result.error or "Model provider failed.", limit=500)
+        job.finished_at = utcnow()
+        db.commit()
+        _emit(db, job, result.status, job.error or "Model provider failed.", level="error", agent="provider")
+        return
 
-    proposals = state.get("proposals") or []
-    declines = state.get("declines") or []
+    if provider.kind != "mock":
+        _emit(
+            db,
+            job,
+            "remediate",
+            "Model findings were stored. Automatic patch proposals and sandbox execution were not run.",
+            agent="remediation",
+        )
+        _emit(
+            db,
+            job,
+            "validate",
+            "Validation was skipped because this review used a hosted model. Untrusted code was not executed.",
+            agent="sandbox",
+        )
+        job.status = "completed"
+        job.stage = "ready"
+        job.finished_at = utcnow()
+        job.error = None
+        db.commit()
+        _emit(db, job, "ready", "Review is ready for a human decision. Nothing was merged.", payload={"job_id": job.id})
+        return
+
+    proposals = result.proposals
+    declines = list(result.declines)
     patch_rows: list[tuple[PatchProposal, dict]] = []
     allowed_paths = {item.path for item in files if item.status != "deleted"}
     for proposal in proposals:
@@ -585,21 +666,6 @@ def _harness_files(rule_id: str) -> dict[str, str]:
         return {}
     path = HARNESS_ROOT / "billing" / "tests" / "test_delivery.py"
     return {"tests/test_delivery.py": path.read_text()}
-
-
-def _usage(traces: list[dict]) -> dict:
-    token_input = sum(item.get("token_input") or 0 for item in traces)
-    token_output = sum(item.get("token_output") or 0 for item in traces)
-    cost = sum(item.get("estimated_cost_usd") or 0 for item in traces)
-    return {
-        "token_input": token_input,
-        "token_output": token_output,
-        "estimated_cost_usd": round(cost, 8),
-        "billed": False,
-        "rate_card": RATE_CARD,
-        "provider": "deterministic-mock",
-        "note": "Estimate only. The mock provider did not call a model API.",
-    }
 
 
 def _emit(db: Session, job: ReviewJob, stage: str, message: str, level: str = "info", agent: str | None = None, payload: dict | None = None) -> None:

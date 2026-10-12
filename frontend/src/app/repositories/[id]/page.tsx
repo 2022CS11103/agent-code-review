@@ -128,7 +128,7 @@ function PolicyForm({ policy, onSave }: { policy: Policy; onSave: (body: Record<
         <input type="checkbox" checked={post} onChange={(event) => setPost(event.target.checked)} />
         Allow GitHub comments when a real installation exists. Demo reviews still stay local.
       </label>
-      <p className="text-xs text-muted-foreground">Stored model preference: {policy.model_provider}. The running provider is the deterministic mock.</p>
+      <p className="text-xs text-muted-foreground">Stored model preference: {policy.model_provider}. Reviews use the process provider from PRISM_LLM_PROVIDER.</p>
       <Button type="submit" size="sm" disabled={saving}>
         {saving ? "Saving…" : "Save policy"}
       </Button>

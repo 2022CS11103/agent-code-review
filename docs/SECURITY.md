@@ -60,9 +60,19 @@ Docker still shares the host kernel. A container escape is outside this design. 
 - Patch edits that introduce `eval(` are rejected. Edits mark the patch `proposed` and do not re-run validation by themselves.
 - Vendor and excluded paths are recorded as skipped coverage, then left out of findings.
 
+## Model provider
+
+- `PRISM_LLM_PROVIDER=mock` never opens a model connection. Demo reviews keep working with no API key.
+- `PRISM_LLM_PROVIDER=openai` sends redacted source to an HTTPS chat-completions URL. The API key is an `Authorization` header. Settings, traces, prompts, and errors do not include it.
+- The base URL must be HTTPS, must not contain a token or userinfo, and must not target a private, loopback, or link-local address.
+- Each review has a timeout, a character budget, and at most three model calls. One retry is allowed for timeout, a short rate-limit window, HTTP 5xx, or malformed JSON. A longer `Retry-After` fails the call. Budget exhaustion is stored as job status `budget_exhausted`.
+- Model JSON is checked against a fixed schema. Findings that cite an unknown file, a missing line, evidence that is not on those lines, or `claim_level=reproduced` are dropped. A provider failure is not stored as a completed review, and publish stays closed until status is `completed`.
+- Hosted-model reviews do not propose patches and do not execute pull-request code. The deterministic mock path still validates demo-fixture patches in the subprocess sandbox.
+
 ## What is not a control yet
 
 - No organization SSO, CSRF cookie, or per-user GitHub token store.
+- GitHub installations are stored on the single `prism-demo` workspace. That is not tenant isolation. Do not open the product to multiple users until an installation is authorized for a specific workspace and repository.
 - No dependency or container scan in CI beyond the tests in this repo.
 - OpenTelemetry export is not connected.
 - Semgrep is not installed in the default environment. Its absence is reported; results are not invented.
