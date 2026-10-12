@@ -66,6 +66,8 @@ class OpenAIReviewProvider:
         max_input_chars: int,
         transport: httpx.BaseTransport | None = None,
         sleeper=None,
+        vendor: str = "openai",
+        key_env: str = "PRISM_OPENAI_API_KEY",
     ):
         self._api_key = api_key or ""
         self._base_url = base_url
@@ -75,7 +77,10 @@ class OpenAIReviewProvider:
         self._max_input_chars = max(1_000, min(int(max_input_chars), _INPUT_CEILING))
         self._transport = transport
         self._sleeper = sleeper if sleeper is not None else time.sleep
-        self.label = f"openai:{model}" if _safe_model(model) else "openai"
+        self._vendor = vendor if vendor in {"openai", "groq", "gemini"} else "openai"
+        self._key_env = key_env
+        self._json_mode = True
+        self.label = f"{self._vendor}:{model}" if _safe_model(model) else self._vendor
 
     def review(self, context: ReviewContext) -> ProviderResult:
         started = time.perf_counter()
@@ -84,7 +89,7 @@ class OpenAIReviewProvider:
                 "failed",
                 started,
                 calls=0,
-                error="OpenAI-compatible provider is selected but PRISM_OPENAI_API_KEY is not set. No model was called.",
+                error=f"{self._vendor} provider is selected but {self._key_env} is not set. No model was called.",
             )
         if not _safe_model(self._model):
             return self._result("failed", started, calls=0, error="Model name is not an allowed identifier. No model was called.")
@@ -182,9 +187,10 @@ class OpenAIReviewProvider:
             "model": self._model,
             "temperature": 0,
             "max_tokens": _OUTPUT_TOKENS,
-            "response_format": {"type": "json_object"},
             "messages": messages,
         }
+        if self._json_mode:
+            payload["response_format"] = {"type": "json_object"}
         try:
             with httpx.Client(
                 transport=self._transport,
@@ -215,6 +221,9 @@ class OpenAIReviewProvider:
             raise ProviderCallError("Model provider rate limited the request.", retryable=True)
         if response.status_code in {500, 502, 503, 504}:
             raise ProviderCallError(f"Model provider returned HTTP {response.status_code}.", retryable=True)
+        if response.status_code == 400 and self._json_mode:
+            self._json_mode = False
+            raise ProviderCallError("Model rejected JSON mode.", retryable=True)
         raise ProviderCallError(f"Model provider returned HTTP {response.status_code}.", retryable=False)
 
     def _result(
@@ -243,7 +252,7 @@ class OpenAIReviewProvider:
             summary += f" {len(rejected)} finding(s) were rejected."
         trace = {
             "agent": "provider",
-            "node": "openai",
+            "node": self._vendor,
             "status": "completed" if status == "completed" else status,
             "duration_ms": duration_ms,
             "input_summary": summary,
@@ -417,7 +426,9 @@ def _scrub(text: str | None, api_key: str) -> str:
 def _safe_model(model: str) -> bool:
     if not model or len(model) > 80:
         return False
-    return all(character.isalnum() or character in "._:-" for character in model)
+    if ".." in model or "//" in model or model.startswith("/") or model.endswith("/"):
+        return False
+    return all(character.isalnum() or character in "._:-/" for character in model)
 
 
 def _retry_after_seconds(value: str | None) -> float | None:

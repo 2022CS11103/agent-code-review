@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     llm_max_input_chars: int = 24_000
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
+    groq_api_key: str | None = None
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    gemini_api_key: str | None = None
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
     sandbox_driver: str = "subprocess"  # subprocess | docker
     sandbox_image: str = "python:3.12-slim"
     sandbox_timeout_seconds: int = 20

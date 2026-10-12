@@ -35,27 +35,40 @@ class UnavailableProvider:
         )
 
 
+_OPENAI_DEFAULT_MODEL = "gpt-4.1-mini"
+_HOSTED = {
+    "openai": ("openai", "PRISM_OPENAI_API_KEY", "openai_api_key", "openai_base_url", _OPENAI_DEFAULT_MODEL),
+    "openai-compatible": ("openai", "PRISM_OPENAI_API_KEY", "openai_api_key", "openai_base_url", _OPENAI_DEFAULT_MODEL),
+    "groq": ("groq", "PRISM_GROQ_API_KEY", "groq_api_key", "groq_base_url", "llama-3.3-70b-versatile"),
+    "gemini": ("gemini", "PRISM_GEMINI_API_KEY", "gemini_api_key", "gemini_base_url", "gemini-2.5-flash"),
+}
+
+
 def llm_view(settings: Settings) -> dict:
     name = (settings.llm_provider or "mock").strip().lower()
     mock = name in {"mock", "deterministic", "deterministic-mock"}
-    active = "deterministic-mock" if mock else name or "unconfigured"
-    if name in {"openai", "openai-compatible"}:
+    target = _hosted_target(settings)
+    if mock or target is None:
+        active = "deterministic-mock" if mock else (name or "unconfigured")
         model = settings.llm_model
-        active = f"openai:{model}"
     else:
-        model = settings.llm_model
+        active = f"{target['vendor']}:{target['model']}"
+        model = target["model"]
     return {
         "active_provider": active,
         "configured_provider": name or "mock",
         "model": model,
         "openai_configured": bool(settings.openai_api_key),
+        "groq_configured": bool(settings.groq_api_key),
+        "gemini_configured": bool(settings.gemini_api_key),
         "timeout_seconds": max(1, min(int(settings.llm_timeout_seconds), 60)),
         "max_calls": max(0, min(int(settings.llm_max_calls), 3)),
         "max_input_chars": max(1_000, min(int(settings.llm_max_input_chars), 80_000)),
         "note": (
             "Demo mode uses the deterministic mock and does not call a model. "
-            "Set PRISM_LLM_PROVIDER=openai with PRISM_OPENAI_API_KEY to request validated findings. "
-            "The key stays in the API process. A failed or budget-exhausted model call does not complete the review. "
+            "Set PRISM_LLM_PROVIDER to gemini or groq and the matching key, PRISM_GEMINI_API_KEY or PRISM_GROQ_API_KEY. "
+            "Leave PRISM_LLM_MODEL at its default to use gemini-2.5-flash or llama-3.3-70b-versatile. "
+            "Keys stay in the API process. A failed or budget-exhausted model call does not complete the review. "
             "Model findings do not generate patches or execute pull-request code."
         ),
         "workspace_isolation": (
@@ -69,13 +82,38 @@ def build_provider(settings: Settings) -> ReviewProvider:
     name = (settings.llm_provider or "mock").strip().lower()
     if name in {"mock", "deterministic", "deterministic-mock"}:
         return DeterministicReviewProvider()
-    if name in {"openai", "openai-compatible"}:
-        return OpenAIReviewProvider(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
-            model=settings.llm_model,
-            timeout_seconds=settings.llm_timeout_seconds,
-            max_calls=settings.llm_max_calls,
-            max_input_chars=settings.llm_max_input_chars,
-        )
-    return UnavailableProvider(name or "empty")
+    target = _hosted_target(settings)
+    if target is None:
+        return UnavailableProvider(name or "empty")
+    return OpenAIReviewProvider(
+        api_key=target["api_key"],
+        base_url=target["base_url"],
+        model=target["model"],
+        timeout_seconds=settings.llm_timeout_seconds,
+        max_calls=settings.llm_max_calls,
+        max_input_chars=settings.llm_max_input_chars,
+        vendor=target["vendor"],
+        key_env=target["key_env"],
+    )
+
+
+def _hosted_target(settings: Settings) -> dict | None:
+    name = (settings.llm_provider or "mock").strip().lower()
+    profile = _HOSTED.get(name)
+    if profile is None:
+        return None
+    vendor, key_env, key_attr, url_attr, default_model = profile
+    return {
+        "vendor": vendor,
+        "key_env": key_env,
+        "api_key": getattr(settings, key_attr) or "",
+        "base_url": getattr(settings, url_attr),
+        "model": _model_for(settings, vendor, default_model),
+    }
+
+
+def _model_for(settings: Settings, vendor: str, default_model: str) -> str:
+    chosen = (settings.llm_model or "").strip()
+    if vendor in {"groq", "gemini"} and chosen in {"", _OPENAI_DEFAULT_MODEL}:
+        return default_model
+    return chosen or default_model

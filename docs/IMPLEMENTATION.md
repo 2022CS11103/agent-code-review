@@ -11,7 +11,7 @@ Status is what has been run, not what the product spec hoped for.
 - Builtin rules: SQL injection, `shell=True`, hardcoded secret, `eval`/`exec`, `pickle.loads`, float currency, query-in-loop, missing auth, test gap.
 - Ruff S-rules where Ruff is installed. `S101` ignored. Semgrep status recorded, not faked.
 - LangGraph fan-out: supervisor, security, correctness, performance, tests, remediation. Structured outputs. Deduped with static findings.
-- Review provider interface. The default deterministic provider makes no model call. An OpenAI-compatible provider validates JSON findings, bounds calls and input size, and records budget exhaustion as its own job status. Tests use a mocked HTTP transport. A live model API was not called.
+- Review provider interface. The default deterministic provider makes no model call. Gemini and Groq use the same validated chat client, with their own API keys and default models. Tests use a mocked HTTP transport. A live model API was not called.
 - Patch proposals for SQL, secret, and shell. Declines for auth, currency, N+1, test gap, and pickle. Repair cap of 3. Secret empty-default repair is a real second attempt.
 - Subprocess validation for demo fixtures, including the SQL harness (baseline fails, patched test passes). Docker argument builder unit-tested. Untrusted repos are not executed.
 - Human confirm, dismiss, reanalyze, patch edit, accept, reject, local report. Accept cannot modify the repo.

@@ -10,8 +10,12 @@ _PATTERNS = [
     re.compile(r"gho_[A-Za-z0-9]{8,}"),
     re.compile(r"ghs_[A-Za-z0-9]{8,}"),
     re.compile(r"ghu_[A-Za-z0-9]{8,}"),
+    re.compile(r"gsk_[A-Za-z0-9]{8,}"),
     re.compile(r"xox[baprs]-[A-Za-z0-9\-]+"),
     re.compile(r"(?i)(bearer\s+)[A-Za-z0-9\-_\.=]{8,}"),
+]
+_FULL_REDACT = [
+    re.compile(r"AIza[0-9A-Za-z\-_]{20,}"),
 ]
 
 
@@ -24,6 +28,8 @@ def redact_text(text: str | None, limit: int = 20_000) -> str:
             cleaned = pattern.sub(r"\1[redacted]", cleaned)
         else:
             cleaned = pattern.sub(lambda match: match.group(0).split("_", 1)[0] + "_[redacted]", cleaned)
+    for pattern in _FULL_REDACT:
+        cleaned = pattern.sub("[redacted]", cleaned)
     if len(cleaned) > limit:
         cleaned = cleaned[:limit] + "\n…[truncated]"
     return cleaned

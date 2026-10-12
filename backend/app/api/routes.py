@@ -557,10 +557,10 @@ def _llm_settings(settings) -> dict:
     from app.providers.registry import llm_view
 
     view = llm_view(settings)
-    secret = settings.openai_api_key or ""
     encoded = str(view)
-    if secret and secret in encoded:
-        raise RuntimeError("Settings view included the model API key")
+    for secret in (settings.openai_api_key, settings.groq_api_key, settings.gemini_api_key):
+        if secret and secret in encoded:
+            raise RuntimeError("Settings view included a model API key")
     return view
 
 

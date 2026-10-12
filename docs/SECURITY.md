@@ -63,7 +63,7 @@ Docker still shares the host kernel. A container escape is outside this design. 
 ## Model provider
 
 - `PRISM_LLM_PROVIDER=mock` never opens a model connection. Demo reviews keep working with no API key.
-- `PRISM_LLM_PROVIDER=openai` sends redacted source to an HTTPS chat-completions URL. The API key is an `Authorization` header. Settings, traces, prompts, and errors do not include it.
+- `PRISM_LLM_PROVIDER=gemini` calls `https://generativelanguage.googleapis.com` with `PRISM_GEMINI_API_KEY`. `PRISM_LLM_PROVIDER=groq` calls `https://api.groq.com` with `PRISM_GROQ_API_KEY`. Both use the same HTTPS chat-completions client. The key is an `Authorization` header. Settings, traces, prompts, and errors do not include it. `gsk_` and `AIza` values are redacted.
 - The base URL must be HTTPS, must not contain a token or userinfo, and must not target a private, loopback, or link-local address.
 - Each review has a timeout, a character budget, and at most three model calls. One retry is allowed for timeout, a short rate-limit window, HTTP 5xx, or malformed JSON. A longer `Retry-After` fails the call. Budget exhaustion is stored as job status `budget_exhausted`.
 - Model JSON is checked against a fixed schema. Findings that cite an unknown file, a missing line, evidence that is not on those lines, or `claim_level=reproduced` are dropped. A provider failure is not stored as a completed review, and publish stays closed until status is `completed`.

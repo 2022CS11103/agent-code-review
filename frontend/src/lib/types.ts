@@ -315,6 +315,8 @@ export type SettingsView = {
     configured_provider: string
     model: string
     openai_configured: boolean
+    groq_configured: boolean
+    gemini_configured: boolean
     timeout_seconds: number
     max_calls: number
     max_input_chars: number

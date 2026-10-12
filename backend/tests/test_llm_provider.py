@@ -73,6 +73,8 @@ def _provider(**kwargs):
         max_input_chars=kwargs.pop("max_input_chars", 8_000),
         transport=transport_factory(handler),
         sleeper=kwargs.pop("sleeper", lambda _seconds: None),
+        vendor=kwargs.pop("vendor", "openai"),
+        key_env=kwargs.pop("key_env", "PRISM_OPENAI_API_KEY"),
     )
     return provider, calls
 
@@ -283,17 +285,87 @@ def test_mock_provider_is_the_default_and_unknown_names_fail_closed(monkeypatch)
 def test_settings_do_not_return_the_api_key(client, session, monkeypatch):
     seed_demo(session, SessionLocal, process_history=False)
     monkeypatch.setenv("PRISM_OPENAI_API_KEY", KEY)
+    monkeypatch.setenv("PRISM_GROQ_API_KEY", "gsk_thisisatestdummykey")
+    monkeypatch.setenv("PRISM_GEMINI_API_KEY", "AIzaSyDummyKeyValue1234567890")
     monkeypatch.setenv("PRISM_LLM_PROVIDER", "openai")
     monkeypatch.setenv("PRISM_LLM_MAX_CALLS", "9")
     get_settings.cache_clear()
     response = client.get("/api/v1/settings")
     assert response.status_code == 200
     assert KEY not in response.text
+    assert "gsk_thisisatestdummykey" not in response.text
+    assert "AIzaSyDummyKeyValue1234567890" not in response.text
     body = response.json()["llm"]
     assert body["openai_configured"] is True
+    assert body["groq_configured"] is True
+    assert body["gemini_configured"] is True
     assert body["max_calls"] == 3
     assert body["active_provider"] == "openai:gpt-4.1-mini"
     assert "prism-demo" in body["workspace_isolation"]
+
+
+def test_groq_and_gemini_use_their_own_keys_and_defaults(monkeypatch):
+    monkeypatch.setenv("PRISM_LLM_PROVIDER", "groq")
+    monkeypatch.setenv("PRISM_GROQ_API_KEY", "gsk_thisisatestdummykey")
+    monkeypatch.setenv("PRISM_LLM_MODEL", "gpt-4.1-mini")
+    get_settings.cache_clear()
+    seen = {}
+
+    def handler(request: httpx.Request):
+        seen["url"] = str(request.url)
+        seen["body"] = request.content.decode()
+        return _json_response({"findings": [], "notes": []})
+
+    provider = build_provider(get_settings())
+    assert provider.label == "groq:llama-3.3-70b-versatile"
+    provider._transport = httpx.MockTransport(handler)
+    source = "token = 'gsk_thisisatestdummykey'\nkey = 'AIzaSyDummyKeyValue1234567890'\n"
+    result = provider.review(_context(source, path="src/keys.py"))
+    assert result.status == "completed"
+    assert seen["url"] == "https://api.groq.com/openai/v1/chat/completions"
+    assert "gsk_thisisatestdummykey" not in seen["body"]
+    assert "AIzaSyDummyKeyValue1234567890" not in seen["body"]
+    assert "llama-3.3-70b-versatile" in seen["body"]
+
+    monkeypatch.setenv("PRISM_LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("PRISM_GEMINI_API_KEY", "AIzaSyDummyKeyValue1234567890")
+    monkeypatch.setenv("PRISM_LLM_MODEL", "openai/gpt-oss-20b")
+    get_settings.cache_clear()
+    provider = build_provider(get_settings())
+    assert provider.label == "gemini:openai/gpt-oss-20b"
+    provider._transport = httpx.MockTransport(handler)
+    assert provider.review(_context()).status == "completed"
+    assert seen["url"] == "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+
+    monkeypatch.setenv("PRISM_LLM_PROVIDER", "groq")
+    monkeypatch.delenv("PRISM_GROQ_API_KEY", raising=False)
+    get_settings.cache_clear()
+    missing = build_provider(get_settings())
+
+    def boom(_request):
+        raise AssertionError("network was called")
+
+    missing._transport = httpx.MockTransport(boom)
+    failed = missing.review(_context())
+    assert failed.status == "failed"
+    assert failed.calls == 0
+    assert "PRISM_GROQ_API_KEY" in (failed.error or "")
+
+
+def test_json_mode_rejection_retries_without_response_format():
+    bodies = []
+
+    def handler(request: httpx.Request):
+        bodies.append(json.loads(request.content))
+        if len(bodies) == 1:
+            return _json_response({}, status=400)
+        return _json_response({"findings": [], "notes": []})
+
+    provider, calls = _provider(handler=handler, vendor="groq", key_env="PRISM_GROQ_API_KEY")
+    assert provider.review(_context()).status == "completed"
+    assert calls["n"] == 2
+    assert "response_format" in bodies[0]
+    assert "response_format" not in bodies[1]
 
 
 def test_budget_exhaustion_keeps_static_findings_and_blocks_publish(session, monkeypatch):

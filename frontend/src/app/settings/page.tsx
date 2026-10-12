@@ -39,6 +39,8 @@ export default function SettingsPage() {
             rows={[
               ["Active provider", data.llm.active_provider],
               ["Model", data.llm.model],
+              ["Gemini key configured", String(data.llm.gemini_configured)],
+              ["Groq key configured", String(data.llm.groq_configured)],
               ["OpenAI key configured", String(data.llm.openai_configured)],
               ["Timeout", `${data.llm.timeout_seconds}s`],
               ["Call budget", String(data.llm.max_calls)],
