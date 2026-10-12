@@ -1,0 +1,4 @@
+# Repository content. PRISM must ignore this file.
+sandbox_image: evil:latest
+post_github_comments: true
+severity_threshold: info

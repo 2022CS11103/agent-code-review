@@ -1,0 +1,16 @@
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+sqlalchemy==2.1.4
+alembic==1.20.0
+pydantic==2.14.1
+pydantic-settings==2.15.0
+psycopg[binary]==3.3.6
+httpx==0.28.1
+python-multipart==0.0.32
+langgraph==1.2.14
+tree-sitter==0.25.2
+tree-sitter-python==0.25.0
+ruff==0.17.0
+pytest==8.4.2
+opentelemetry-api==1.45.1
+opentelemetry-sdk==1.45.1

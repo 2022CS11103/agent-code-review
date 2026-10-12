@@ -1,0 +1,74 @@
+# Local production-shaped stack. This file was not executed in the environment
+# that produced the first demo; the verified path is scripts/dev.sh with SQLite.
+#
+# Redis is started so a later queue adapter has a broker. This build's worker
+# polls PostgreSQL. It does not read Redis.
+#
+# The worker is not given the Docker socket. Untrusted sandboxing is a separate
+# runner; do not mount docker.sock into this API.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: prism
+      POSTGRES_PASSWORD: prism
+      POSTGRES_DB: prism
+    ports:
+      - "54329:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prism -d prism"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "63791:6379"
+
+  backend:
+    build: ./backend
+    environment:
+      PRISM_DATABASE_URL: postgresql+psycopg://prism:prism@postgres:5432/prism
+      PRISM_WORKER_MODE: external
+      PRISM_DEMO_MODE: "true"
+      PRISM_AUTO_SEED: "true"
+      PRISM_LLM_PROVIDER: mock
+      PRISM_SANDBOX_DRIVER: subprocess
+      PRISM_ALLOWED_ORIGINS: http://127.0.0.1:43123,http://localhost:43123
+      PRISM_GITHUB_WEBHOOK_SECRET: replace-with-a-long-random-secret
+    ports:
+      - "8741:8741"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build: ./backend
+    command: ["python", "-m", "app.worker"]
+    environment:
+      PRISM_DATABASE_URL: postgresql+psycopg://prism:prism@postgres:5432/prism
+      PRISM_WORKER_MODE: external
+      PRISM_AUTO_SEED: "false"
+      PRISM_DEMO_MODE: "true"
+      PRISM_LLM_PROVIDER: mock
+      PRISM_SANDBOX_DRIVER: subprocess
+      PRISM_GITHUB_WEBHOOK_SECRET: replace-with-a-long-random-secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    environment:
+      BACKEND_URL: http://backend:8741
+    ports:
+      - "43123:43123"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
