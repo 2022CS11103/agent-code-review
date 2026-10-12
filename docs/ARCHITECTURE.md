@@ -45,6 +45,8 @@ Docker is not a security boundary by itself. The interface is a function that re
 
 ## GitHub
 
-`POST /api/v1/webhooks/github` checks `X-Hub-Signature-256`, requires `X-GitHub-Delivery`, and acknowledges quickly. Duplicate deliveries are ignored. Unknown repositories are ignored. The client allows only `https://api.github.com`. Demo reviews pin the stored commit SHA and never clone a payload URL.
+`POST /api/v1/webhooks/github` checks `X-Hub-Signature-256`, requires `X-GitHub-Delivery`, and acknowledges with `202`. Duplicate deliveries are ignored. Demo fixtures still queue from the stored tree and do not call GitHub.
 
-Publishing a report writes `delivery_status=stored_locally_demo` and does not call GitHub.
+For a GitHub App installation, `installation` and `installation_repositories` events create repository rows on the demo workspace. `pull_request.opened` and `pull_request.synchronize` pin the webhook head SHA, enqueue a job, and return before the network fetch. The worker then reads the pull request, the file list, and file contents from `https://api.github.com` and refuses to continue if the API head SHA differs. Clone URLs are ignored. Installation tokens are minted from the App JWT, cached in memory, and are not stored or returned to the browser.
+
+Publish posts a check run with conclusion `action_required` and a pull-request review with event `COMMENT`. Inline comments are sent only for lines that appear on the new-file side of the fetched diff. Everything else stays in the summary. There is no merge or push call. Demo repositories and policies with GitHub comments disabled stay local.

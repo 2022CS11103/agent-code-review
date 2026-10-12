@@ -12,6 +12,7 @@ from app.intelligence.remediation import policy_issues
 from app.models import (
     AuditEvent,
     Finding,
+    GithubInstallation,
     PatchProposal,
     PullRequest,
     PullRequestFile,
@@ -215,12 +216,7 @@ def publish_report(db: Session, user: User, job: ReviewJob) -> ReviewReport:
     lines.append("")
     lines.append("Sandbox paths, host secrets, and credential literals are redacted in this report.")
     body = redact_text("\n".join(lines), limit=50_000)
-    if repo.provider == "demo" or repo.trust_tier == "demo_fixture":
-        destination = "local"
-        delivery = "stored_locally_demo"
-    else:
-        destination = "github"
-        delivery = "not_delivered_no_installation_token"
+    destination, delivery, github_called = _deliver(db, repo, pull, job, body, findings)
     report = ReviewReport(job_id=job.id, body=body, destination=destination, delivery_status=delivery, redacted=True)
     db.add(report)
     audit(
@@ -230,8 +226,44 @@ def publish_report(db: Session, user: User, job: ReviewJob) -> ReviewReport:
         "report_published",
         "review_job",
         job.id,
-        {"delivery_status": delivery, "github_called": False},
+        {"delivery_status": delivery, "github_called": github_called},
     )
     db.commit()
     db.refresh(report)
+    report.github_called = github_called  # type: ignore[attr-defined]
     return report
+
+
+def _deliver(db: Session, repo: Repository, pull: PullRequest, job: ReviewJob, body: str, findings: list[Finding]) -> tuple[str, str, bool]:
+    if repo.provider == "demo" or repo.trust_tier == "demo_fixture":
+        return "local", "stored_locally_demo", False
+    policy = db.query(ReviewPolicy).filter_by(repository_id=repo.id).one()
+    if not policy.post_github_comments:
+        return "local", "withheld_by_policy", False
+    from app.services.github_app import app_configured, github_client_for_installation
+    from app.services.github_client import GithubClientError
+    from app.services.github_ingest import plan_review_comments
+
+    if not app_configured():
+        return "github", "not_delivered_app_not_configured", False
+    installation = db.get(GithubInstallation, repo.installation_id) if repo.installation_id else None
+    if installation is None or installation.status != "active" or installation.installation_id is None:
+        return "github", "not_delivered_no_installation", False
+    files = {
+        item.path: item.patch or ""
+        for item in db.query(PullRequestFile).filter(PullRequestFile.pull_request_id == pull.id).all()
+    }
+    comments, omitted = plan_review_comments(findings, files, policy.github_min_severity)
+    summary = body
+    if omitted:
+        summary = summary + "\n\nFindings that were not on a diff line stayed in this summary:\n" + "\n".join(f"- {item}" for item in omitted)
+    summary = redact_text(summary, limit=60_000)
+    client = github_client_for_installation(installation.installation_id)
+    try:
+        client.create_check_run(repo.owner, repo.name, pull.head_sha, summary, summary)
+        client.create_review(repo.owner, repo.name, pull.number, summary, pull.head_sha, comments)
+    except GithubClientError:
+        return "github", "github_failed", True
+    finally:
+        client.close()
+    return "github", "delivered_check_and_summary", True

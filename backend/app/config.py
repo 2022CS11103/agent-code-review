@@ -26,7 +26,10 @@ class Settings(BaseSettings):
     stage_delay_ms: int = 450
     github_webhook_secret: str = "dev-only-webhook-secret"
     github_api_base: str = "https://api.github.com"
-    github_token: str | None = None
+    github_app_id: str | None = None
+    github_app_slug: str | None = None
+    github_app_private_key: str | None = None
+    github_app_private_key_path: str | None = None
     llm_provider: str = "mock"
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"

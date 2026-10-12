@@ -1,48 +1,78 @@
-# GitHub App setup
+# GitHub App
 
-The demo does not need this. Use it when you want a real installation. Until `PRISM_GITHUB_TOKEN` is set and a repository row exists for the installation, webhooks for unknown repos are acknowledged and ignored.
+Demo mode does not need an App. With no App id and no private key, PRISM still reviews the seeded repositories and stores reports locally.
 
-## App
+A live installation was not exercised in the environment that added this code. The tests in `backend/tests/test_github_app.py` mock `api.github.com`. Treat a real repository check as still open until you have run the steps below against a repository you control.
 
-Create a GitHub App owned by the user or organization that will install it.
+## Permissions
 
-Permissions, least privilege:
+Create the App with only:
 
-- Pull requests: read and write (review comments and the summary).
-- Checks: read and write, if you later turn on check runs.
-- Contents: read (diff and file content).
-- Metadata: read (mandatory).
+- Metadata: read (GitHub requires this)
+- Contents: read
+- Pull requests: write (used to post a `COMMENT` review, not to merge)
+- Checks: write
+
+Do not grant contents write, administration, or workflows. If an installation arrives with contents write or administration, PRISM records the extra permission and still does not call a write-contents or merge API. If contents read, pull requests write, or checks write is missing, the installation is stored as `permissions_incomplete` and pull-request events do not enqueue a review.
 
 Subscribe to:
 
-- `pull_request` (opened, synchronize)
+- `pull_request` (opened and synchronize; reopened is handled the same way)
 - `installation`
 - `installation_repositories`
 
-Set the webhook URL to the tunnel below. Set a long random webhook secret and the same value in `PRISM_GITHUB_WEBHOOK_SECRET`. Do not leave the dev default in place.
+## Secrets
 
-Generate a private key if you add an installation-token client later. This build’s HTTP client uses `PRISM_GITHUB_TOKEN` as a bearer token and only talks to `https://api.github.com`. Installation-token minting from the private key is not implemented.
+Set a long webhook secret in the App and in `PRISM_GITHUB_WEBHOOK_SECRET`. Leave the dev default only on a machine that is not reachable from GitHub.
 
-## Local tunnel
+```bash
+PRISM_GITHUB_APP_ID=123456
+PRISM_GITHUB_APP_SLUG=your-app-slug
+PRISM_GITHUB_APP_PRIVATE_KEY_PATH=/secure/prism-github.pem
+```
 
-The API listens on port 8741.
+The private key may also be passed as `PRISM_GITHUB_APP_PRIVATE_KEY` with escaped newlines. Do not commit either value. A personal access token is not accepted.
+
+The install link shown in Settings is `https://github.com/apps/<slug>/installations/new`. Installation tokens are minted by exchanging a short-lived App JWT at `/app/installations/{id}/access_tokens`. They stay in API memory.
+
+## What a delivery does
+
+1. The webhook signature is checked. A bad signature returns 401 and writes an audit event.
+2. `X-GitHub-Delivery` is stored. The same delivery returns the original outcome and does not create a second job.
+3. An installation event creates or updates repositories on the `prism-demo` workspace. This build does not map one GitHub account to many PRISM workspaces.
+4. `pull_request.opened` and `pull_request.synchronize` validate the owner, name, number, and head SHA, store a stub, and return `202` with a job id.
+5. The worker fetches the pull request, the changed-file list, and file text from the API. If the API head SHA differs from the pinned SHA, the job fails instead of reviewing a different commit.
+6. Static analysis runs. Untrusted repository code is not executed by the subprocess sandbox, so patch validation is `inconclusive` until a container runner is available.
+7. Publish, after the job is `completed` and the repository policy allows GitHub comments, posts:
+   - a check run named `PRISM` with conclusion `action_required`
+   - a review whose event is `COMMENT`
+   - inline comments only when the finding line is on the new-file side of the fetched patch
+8. Findings that are not on a diff line stay in the summary. Nothing is merged or pushed.
+
+Rate limits and 5xx responses are retried up to three times, and only when `Retry-After` is at most two seconds. A longer limit fails the attempt so the process does not sleep through a large window. Publish then reports `github_failed` and `github_called: true`.
+
+## Try it on a test repository
+
+Use an empty private repository that you own. Install the App on that repository only.
+
+Expose the API:
 
 ```bash
 cloudflared tunnel --url http://127.0.0.1:8741
 ```
 
-or
+Set the App webhook URL to `https://<tunnel>/api/v1/webhooks/github`.
+
+Open a pull request that changes a Python file. The command center should show the pull request after the webhook, and the review page should fill in once the worker finishes the fetch. In the repository policy, enable GitHub comments, then choose Publish report. GitHub should show a neutral-blocking check (`action_required`) and a comment review. It should not show an approval, and the pull request should remain unmerged.
+
+Confirm Settings does not display the private key or an installation token.
+
+## Local signature check
+
+This checks the webhook handler without GitHub. It does not prove the App can fetch a repository.
 
 ```bash
-ngrok http 8741
-```
-
-Point the App webhook at `https://<tunnel>/api/v1/webhooks/github`.
-
-A signed delivery looks like:
-
-```bash
-BODY='{"action":"opened","pull_request":{"number":1},"repository":{"full_name":"acme/billing-service"}}'
+BODY='{"action":"opened","repository":{"full_name":"acme/billing-service"},"pull_request":{"number":142,"head":{"sha":"<stored demo sha>"}}}'
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$PRISM_GITHUB_WEBHOOK_SECRET" | awk '{print $2}')
 curl -sS -D- -o /tmp/prism-hook.json \
   -X POST http://127.0.0.1:8741/api/v1/webhooks/github \
@@ -53,8 +83,4 @@ curl -sS -D- -o /tmp/prism-hook.json \
   --data "$BODY"
 ```
 
-The handler returns 202 even when the event is ignored. A second request with the same delivery id does not create another job.
-
-## What posting a review does today
-
-`POST /api/v1/reviews/{id}/report` writes a redacted report with `delivery_status=stored_locally_demo` and `github_called=false`. Inline comments are not published. When a GitHub publisher is added, it must check that the line still exists on the pinned diff and fall back to a summary comment if it does not. It must not include secret snippets or sandbox paths.
+For the seeded demo pull request, the stored SHA must match or the outcome is `sha_not_pinned_locally`. A second request with the same delivery id is a duplicate.

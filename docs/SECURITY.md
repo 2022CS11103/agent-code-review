@@ -17,8 +17,10 @@ PRISM reviews untrusted diffs. The controls below are what this repository actua
 - Missing or bad signatures return 401 and write an audit event.
 - Delivery ids are stored unique, so retries do not create a second job.
 - Clone URLs and branch names from the payload are not passed to a shell.
-- The HTTP client rejects any base URL other than `https://api.github.com`, which blocks link-local and metadata hosts.
-- Reports pass through redaction. Webhook secrets, `sk-` keys, `ghp_` tokens, `github_pat_` tokens, and bearer values are stripped. Snippets of hardcoded secrets keep a short prefix and then `[redacted]`.
+- The HTTP client rejects any base URL other than `https://api.github.com`, which blocks link-local and metadata hosts. Pagination links are checked the same way and cannot carry an access token.
+- GitHub App private keys sign a short-lived JWT. Installation tokens (`ghs_`) are kept in process memory. Settings reports only whether the key is configured.
+- A published check uses conclusion `action_required`. The review event is `COMMENT`. Neither result approves or merges the pull request.
+- Reports pass through redaction. Webhook secrets, `sk-` keys, `ghp_` tokens, `ghs_` installation tokens, `github_pat_` tokens, and bearer values are stripped. Snippets of hardcoded secrets keep a short prefix and then `[redacted]`.
 
 The default webhook secret `dev-only-webhook-secret` logs a warning at startup. Replace it before exposing the endpoint. Settings reports `webhook_secret_is_default`.
 

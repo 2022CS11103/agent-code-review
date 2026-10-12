@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 
 from app.config import get_settings
 from app.db import SessionLocal, get_session
@@ -51,8 +50,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/v1")
-SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
-NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
 
 
 def db_session():
@@ -453,7 +450,7 @@ def post_report(
         "destination": report.destination,
         "delivery_status": report.delivery_status,
         "redacted": report.redacted,
-        "github_called": False,
+        "github_called": bool(getattr(report, "github_called", False)),
     }
 
 
@@ -500,11 +497,7 @@ def settings_view(workspace: Workspace = Depends(current_workspace)) -> dict:
                 "It is not a substitute for a microVM or gVisor-class sandbox."
             ),
         },
-        "github": {
-            "api_base": settings.github_api_base,
-            "token_configured": bool(settings.github_token),
-            "webhook_secret_is_default": settings.github_webhook_secret == "dev-only-webhook-secret",
-        },
+        "github": _github_settings(settings),
         "database_dialect": dialect,
         "worker_mode": settings.worker_mode,
         "analyzer_version": ANALYZER_VERSION,
@@ -545,10 +538,10 @@ async def github_webhook(request: Request, db: Session = Depends(db_session)) ->
     workspace_id = None
     if event_name == "ping":
         outcome = "pong"
-    elif event_name == "pull_request" and action in {"opened", "synchronize", "reopened"}:
-        job_id, workspace_id, outcome = _enqueue_from_webhook(db, payload)
     else:
-        outcome = "ignored"
+        from app.services.github_ingest import handle_event
+
+        job_id, workspace_id, outcome = handle_event(db, event_name, payload)
     db.add(
         WebhookDelivery(
             delivery_id=delivery,
@@ -563,53 +556,22 @@ async def github_webhook(request: Request, db: Session = Depends(db_session)) ->
     return {"ok": True, "duplicate": False, "job_id": job_id, "outcome": outcome}
 
 
-def _enqueue_from_webhook(db: Session, payload: dict) -> tuple[str | None, str | None, str]:
-    repository = payload.get("repository") if isinstance(payload.get("repository"), dict) else {}
-    full_name = repository.get("full_name")
-    pull = payload.get("pull_request") if isinstance(payload.get("pull_request"), dict) else {}
-    number = pull.get("number")
-    sha = ((pull.get("head") or {}) if isinstance(pull.get("head"), dict) else {}).get("sha")
-    if not isinstance(full_name, str) or "/" not in full_name:
-        return None, None, "invalid_repository"
-    owner, name = full_name.split("/", 1)
-    if not NAME_RE.match(owner) or not NAME_RE.match(name):
-        return None, None, "invalid_repository"
-    if not isinstance(number, int) or isinstance(number, bool):
-        return None, None, "invalid_pull_request"
-    if not isinstance(sha, str) or not SHA_RE.match(sha):
-        return None, None, "invalid_sha"
-    repo = db.query(Repository).filter(Repository.owner == owner, Repository.name == name).one_or_none()
-    if repo is None:
-        audit(db, None, None, "webhook_ignored", "repository", None, {"reason": "unknown_repository", "name": f"{owner}/{name}"})
-        return None, None, "unknown_repository"
-    stored = (
-        db.query(PullRequest)
-        .filter(PullRequest.repository_id == repo.id, PullRequest.number == number)
-        .one_or_none()
-    )
-    if stored is None:
-        audit(db, repo.workspace_id, None, "webhook_ignored", "pull_request", None, {"reason": "pull_not_ingested", "number": number})
-        return None, repo.workspace_id, "pull_not_ingested"
-    if stored.head_sha != sha:
-        audit(
-            db,
-            repo.workspace_id,
-            None,
-            "webhook_ignored",
-            "pull_request",
-            stored.id,
-            {"reason": "sha_not_pinned_locally", "payload_sha": sha, "stored_sha": stored.head_sha},
-        )
-        return None, repo.workspace_id, "sha_not_pinned_locally"
-    job, _created = create_review(
-        db,
-        stored,
-        workspace_id=repo.workspace_id,
-        trigger="webhook",
-        origin="webhook",
-        idempotency_key=None,
-    )
-    return job.id, repo.workspace_id, "queued"
+def _github_settings(settings) -> dict:
+    from app.services.github_app import app_configured, private_key
+
+    slug = settings.github_app_slug if isinstance(settings.github_app_slug, str) else None
+    safe_slug = slug if slug and slug.replace("-", "").isalnum() else None
+    return {
+        "api_base": settings.github_api_base,
+        "app_id_configured": bool(settings.github_app_id),
+        "private_key_configured": bool(private_key()),
+        "app_configured": app_configured(),
+        "app_slug": safe_slug,
+        "install_url": f"https://github.com/apps/{safe_slug}/installations/new" if safe_slug else None,
+        "webhook_secret_is_default": settings.github_webhook_secret == "dev-only-webhook-secret",
+        "permissions": ["metadata:read", "contents:read", "pull_requests:write", "checks:write"],
+        "note": "Installation tokens stay in the API process. They are not sent to the browser or the model.",
+    }
 
 
 def _repo_or_404(db: Session, workspace: Workspace, repository_id: str) -> Repository:

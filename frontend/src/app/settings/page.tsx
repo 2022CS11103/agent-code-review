@@ -59,13 +59,18 @@ export default function SettingsPage() {
           <List
             rows={[
               ["API base", data.github.api_base],
-              ["Token configured", String(data.github.token_configured)],
+              ["App configured", String(data.github.app_configured)],
+              ["App id configured", String(data.github.app_id_configured)],
+              ["Private key configured", String(data.github.private_key_configured)],
+              ["Install URL", data.github.install_url ?? "Set PRISM_GITHUB_APP_SLUG"],
+              ["Permissions", data.github.permissions.join(", ")],
               ["Webhook secret is the dev default", String(data.github.webhook_secret_is_default)],
               ["Database", data.database_dialect],
               ["Worker", data.worker_mode],
               ["Demo mode", String(data.demo_mode)],
             ]}
           />
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{data.github.note}</p>
         </Section>
       </div>
     </PageFrame>

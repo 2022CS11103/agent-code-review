@@ -53,7 +53,7 @@ Backend tests set `PRISM_AUTO_MIGRATE=0` and build the schema with SQLAlchemy. A
 ## What this build does not do
 
 - It does not call OpenAI. `PRISM_LLM_PROVIDER=mock` fills agent notes from structured fields.
-- It does not install a GitHub App or post review comments. Webhook verification is implemented and tested.
+- GitHub App delivery is implemented and covered with mocked API tests. A live install was not verified in this environment, because no App credentials were available. Demo mode still runs with no GitHub credentials. Publishing a check uses conclusion `action_required` and a `COMMENT` review. It never approves or merges. Turn on **Allow GitHub comments** in the repository policy before Publish will call GitHub. Untrusted pull-request code is still not executed in the subprocess sandbox.
 - It does not run untrusted repository code in the API process. The subprocess sandbox is limited to `trust_tier=demo_fixture`.
 - Docker Compose is the documented production-shaped path. It was not run here, and this machine has no Docker daemon.
 - Redis is in Compose for a later queue. The worker polls the database.

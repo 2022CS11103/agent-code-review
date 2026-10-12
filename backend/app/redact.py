@@ -8,6 +8,8 @@ _PATTERNS = [
     re.compile(r"github_pat_[A-Za-z0-9_]{8,}"),
     re.compile(r"ghp_[A-Za-z0-9]{8,}"),
     re.compile(r"gho_[A-Za-z0-9]{8,}"),
+    re.compile(r"ghs_[A-Za-z0-9]{8,}"),
+    re.compile(r"ghu_[A-Za-z0-9]{8,}"),
     re.compile(r"xox[baprs]-[A-Za-z0-9\-]+"),
     re.compile(r"(?i)(bearer\s+)[A-Za-z0-9\-_\.=]{8,}"),
 ]

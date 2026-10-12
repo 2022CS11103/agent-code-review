@@ -312,7 +312,17 @@ export type SettingsView = {
   workspace: { id: string; name: string; demo: boolean }
   llm: { active_provider: string; openai_configured: boolean; note: string }
   sandbox: { driver: string; image: string; limitations: string }
-  github: { api_base: string; token_configured: boolean; webhook_secret_is_default: boolean }
+  github: {
+    api_base: string
+    app_id_configured: boolean
+    private_key_configured: boolean
+    app_configured: boolean
+    app_slug: string | null
+    install_url: string | null
+    webhook_secret_is_default: boolean
+    permissions: string[]
+    note: string
+  }
   database_dialect: string
   worker_mode: string
   analyzer_version: string

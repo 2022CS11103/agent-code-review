@@ -113,8 +113,12 @@ export function ReviewWorkspace() {
 
   async function publish() {
     try {
-      await api(`/reviews/${id}/report`, { method: "POST" })
-      toast.success("Report stored locally. GitHub was not called.")
+      const result = await api<{ delivery_status: string; github_called: boolean }>(`/reviews/${id}/report`, { method: "POST" })
+      toast.success(
+        result.github_called
+          ? `GitHub was contacted (${result.delivery_status}). Nothing was merged.`
+          : `Report stored (${result.delivery_status}). GitHub was not called.`,
+      )
       client.invalidateQueries({ queryKey: ["review", id] })
     } catch (error) {
       toast.error((error as Error).message)

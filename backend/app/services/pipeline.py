@@ -92,6 +92,11 @@ def _run(db: Session, job: ReviewJob) -> None:
     if pr is None:
         raise RuntimeError("Pull request disappeared before the job ran")
     repo = db.get(Repository, pr.repository_id)
+    if repo.provider == "github":
+        from app.services.github_ingest import refresh_pull_from_github
+
+        refresh_pull_from_github(db, repo, pr)
+        db.refresh(pr)
     policy = db.query(ReviewPolicy).filter_by(repository_id=repo.id).one()
     files = list(db.query(PullRequestFile).filter_by(pull_request_id=pr.id).all())
     _pause(settings)

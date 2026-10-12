@@ -15,6 +15,7 @@ Status is what has been run, not what the product spec hoped for.
 - Subprocess validation for demo fixtures, including the SQL harness (baseline fails, patched test passes). Docker argument builder unit-tested. Untrusted repos are not executed.
 - Human confirm, dismiss, reanalyze, patch edit, accept, reject, local report. Accept cannot modify the repo.
 - Webhook HMAC, delivery idempotency, GitHub host allowlist.
+- GitHub App JWT exchange, installation webhooks, pull-request fetch at the pinned SHA, check runs, and summary comments. Mocked API tests cover this. A live GitHub repository was not connected here.
 - Evaluation fixture suite with precision, recall, and residual risks.
 - Audit log, settings, command center metrics computed from stored jobs. Null rates when the denominator is zero.
 - Next.js command center, pull-request workspace, diff, trace, validation studio, policy editor, evaluation, audit, settings. Command palette. Live refetch and SSE.
@@ -22,7 +23,7 @@ Status is what has been run, not what the product spec hoped for.
 
 ## Not done
 
-- GitHub App installation UI, check runs, and published review comments.
+- A live GitHub App round trip. The code path is tested against a mock API only.
 - Hosted LLM provider. The mock is the only executor.
 - Redis/ARQ queue. The worker polls the database. Redis in Compose is unused.
 - Postgres exercised in this environment. Compose was not started. `psycopg` 3.3.6 is pinned for that URL.
@@ -32,7 +33,7 @@ Status is what has been run, not what the product spec hoped for.
 
 ## Phase order from here
 
-1. Add `psycopg`, run Compose against Postgres, and keep SQLite for the default laptop path.
-2. Publish a GitHub check and a summary comment from an approved report, with line validation.
-3. Put a real provider behind the existing Pydantic schemas without letting it override policy.
-4. Move sandbox execution to a stronger runner when a deployment target exists.
+1. Verify the GitHub App against a dedicated test repository once credentials exist. The mocked flow is in `backend/tests/test_github_app.py`.
+2. Put a real provider behind the existing Pydantic schemas without letting it override policy.
+3. Run untrusted pull-request tests in disposable, resource-limited containers. The subprocess driver still refuses `trust_tier=untrusted`.
+4. Extend the evaluation set beyond the builtin rule fixtures and record patch success, latency, and cost for that set.
