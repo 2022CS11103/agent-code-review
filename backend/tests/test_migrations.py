@@ -1,5 +1,7 @@
 """Alembic upgrade and downgrade against an empty SQLite file."""
 
+import logging
+
 from app.config import BACKEND_ROOT, get_settings
 from sqlalchemy import create_engine, inspect
 
@@ -15,7 +17,10 @@ def test_alembic_upgrade_and_downgrade(tmp_path, monkeypatch):
 
     cfg = Config(str(BACKEND_ROOT / "alembic.ini"))
     cfg.set_main_option("sqlalchemy.url", get_settings().resolved_database_url)
+    server_log = logging.getLogger("uvicorn.error")
+    server_log.disabled = False
     command.upgrade(cfg, "head")
+    assert server_log.disabled is False
 
     engine = create_engine(url)
     names = set(inspect(engine).get_table_names())

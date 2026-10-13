@@ -43,7 +43,7 @@ REPOS = {
 }
 
 
-def seed_demo(db: Session, session_factory, *, process_history: bool = True) -> None:
+def seed_demo(db: Session, session_factory, *, process_history: bool = True, run_inline: bool = True) -> None:
     if db.query(Workspace).filter(Workspace.slug == "prism-demo").one_or_none():
         return
     workspace = Workspace(name="Prism Demo", slug="prism-demo", demo=True)
@@ -141,6 +141,7 @@ def seed_demo(db: Session, session_factory, *, process_history: bool = True) -> 
                 origin="seed",
                 idempotency_key=f"seed:{repo.owner}/{repo.name}#{pull.number}",
             )
-            process_job(job.id, session_factory)
+            if run_inline:
+                process_job(job.id, session_factory)
     audit(db, workspace.id, user.id, "demo_seeded", "workspace", workspace.id, {"mode": "demo"})
     db.commit()

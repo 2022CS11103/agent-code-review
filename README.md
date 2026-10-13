@@ -20,9 +20,33 @@ Requirements: Python 3.12, Node.js 22.
 
 The script uses SQLite at `backend/data/prism.db`, seeds the demo workspace, and runs the worker inside the API process. Copy `.env.example` if you want to override settings. The prefix is `PRISM_`.
 
+### Windows PowerShell
+
+Use two windows and leave both open. The API is listening only after Uvicorn prints:
+
+`Uvicorn running on http://127.0.0.1:8741 (Press CTRL+C to quit)`
+
+Alembic’s migration lines are not that message. If the prompt returns before Uvicorn says it is running, the API process has exited.
+
+```powershell
+cd backend
+$env:PRISM_LLM_PROVIDER = "gemini"
+.\.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8741
+```
+
+Put the Gemini key in `backend\.env` as `PRISM_GEMINI_API_KEY`. A shell variable overrides the same name in that file. The seeded auth-gateway review runs after the socket is listening, so the window has to stay open while it finishes.
+
+```powershell
+cd frontend
+$env:BACKEND_URL = "http://127.0.0.1:8741"
+npm run dev -- --hostname 127.0.0.1 --port 43123
+```
+
+Open http://127.0.0.1:43123. Settings should show Gemini key configured as true. A Gemini review does not run the sandbox or propose patches.
+
 ### Demo path
 
-1. Open the review queue. `acme/auth-gateway` #87 already has a seeded review produced by the pipeline. `acme/billing-service` #142 is waiting.
+1. Open the review queue. After the API worker starts, `acme/auth-gateway` #87 has a review produced by the pipeline. `acme/billing-service` #142 is waiting.
 2. Open billing #142 and choose **Run review**.
 3. Stay on the review. Stages move from ingest through ready. Findings show file, line, severity, and observed evidence separately from agent commentary.
 4. Open **Validation** to see baseline versus patched tests, the repair attempt, and lint/security status.

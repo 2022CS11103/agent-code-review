@@ -58,6 +58,17 @@ def test_billing_review_reproduces_sql_and_does_not_merge(session):
     assert report.redacted is True
 
 
+def test_seed_history_stays_queued_until_the_worker_runs(session, monkeypatch):
+    called = []
+    monkeypatch.setattr("app.services.seed.process_job", lambda *args, **kwargs: called.append(args))
+    seed_demo(session, SessionLocal, process_history=True, run_inline=False)
+    assert called == []
+    auth = session.query(PullRequest).filter(PullRequest.number == 87).one()
+    job = session.query(ReviewJob).filter(ReviewJob.pull_request_id == auth.id).one()
+    assert job.status == "queued"
+    assert job.origin == "seed"
+
+
 def test_api_command_center_and_decisions(client, session):
     seed_demo(session, SessionLocal, process_history=True)
     center = client.get("/api/v1/command-center")

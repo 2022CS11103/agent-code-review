@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import traceback
 import uuid
 from contextlib import asynccontextmanager
 
@@ -29,10 +30,23 @@ def configure_logging() -> None:
 
     class _Redact(logging.Filter):
         def filter(self, record: logging.LogRecord) -> bool:
-            record.msg = redact_text(str(record.msg), limit=2000)
+            try:
+                record.msg = redact_text(str(record.msg), limit=2000)
+            except Exception:
+                return True
             return True
 
     logging.getLogger().addFilter(_Redact())
+
+
+def restore_server_logging() -> None:
+    """Alembic's fileConfig replaces the root logger and can silence Uvicorn."""
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "prism", "prism.worker"):
+        logging.getLogger(name).disabled = False
+    __import__("sys").stderr.write(
+        "PRISM database is ready. Leave this window open until Uvicorn says it is running.\n"
+    )
+    __import__("sys").stderr.flush()
 
 
 def migrate() -> None:
@@ -45,7 +59,10 @@ def migrate() -> None:
 
     cfg = Config(str(BACKEND_ROOT / "alembic.ini"))
     cfg.set_main_option("sqlalchemy.url", get_settings().resolved_database_url)
-    command.upgrade(cfg, "head")
+    try:
+        command.upgrade(cfg, "head")
+    finally:
+        restore_server_logging()
 
 
 @asynccontextmanager
@@ -54,14 +71,24 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     if settings.github_webhook_secret == "dev-only-webhook-secret":
         log.warning("PRISM_GITHUB_WEBHOOK_SECRET is the dev default. Set a real secret before exposing webhooks.")
-    migrate()
-    db = SessionLocal()
     try:
-        fail_interrupted(db)
-        if settings.auto_seed:
-            seed_demo(db, SessionLocal, process_history=True)
-    finally:
-        db.close()
+        migrate()
+        db = SessionLocal()
+    except Exception:
+        traceback.print_exc()
+        log.exception("Startup database step failed. The API will still listen.")
+    else:
+        try:
+            fail_interrupted(db)
+            if settings.auto_seed:
+                # Queue the demo history review. The worker runs it after the
+                # socket is listening, so a Gemini call cannot block startup.
+                seed_demo(db, SessionLocal, process_history=True, run_inline=False)
+        except Exception:
+            traceback.print_exc()
+            log.exception("Startup database step failed. The API will still listen.")
+        finally:
+            db.close()
     stop = __import__("asyncio").Event()
     task = None
     if settings.worker_mode == "embedded":

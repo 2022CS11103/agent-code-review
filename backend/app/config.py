@@ -61,7 +61,8 @@ class Settings(BaseSettings):
         if url.startswith(prefix):
             path = (BACKEND_ROOT / url.removeprefix("sqlite:///")).resolve()
             path.parent.mkdir(parents=True, exist_ok=True)
-            return "sqlite:///" + str(path)
+            # as_posix keeps Windows paths as C:/... which SQLite URLs accept.
+            return "sqlite:///" + path.as_posix()
         return url
 
     @property

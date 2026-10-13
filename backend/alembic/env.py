@@ -9,7 +9,9 @@ from app import models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # The default True disables uvicorn.error, so a later startup failure
+    # exits with no "Application startup failed" line.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 config.set_main_option("sqlalchemy.url", get_settings().resolved_database_url)
 target_metadata = Base.metadata
 
