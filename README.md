@@ -32,6 +32,32 @@ The script uses SQLite at `backend/data/prism.db`, seeds the demo workspace, and
 
 `Ctrl` or `Cmd`+`K` jumps to a pull request or screen. The header switches light and dark.
 
+## What is ready to use
+
+The demo is the working product. Open the app, run **billing-service #142**, and read the findings, the sandbox result, and the saved decision. That path does not need a Gemini key or a GitHub App.
+
+A run on 13 Oct 2026 completed that path on the deterministic mock:
+
+- Findings included `sql_injection`, `shell_true`, `hardcoded_secret`, `float_currency`, `n_plus_one`, `missing_auth`, and `test_gap`.
+- The SQL finding was `reproduced`. Its patch `parameterize_sql` passed: the baseline test failed and the patched test passed.
+- The secret patch stayed `needs_review` on attempt 2. The shell patch stayed `needs_review`.
+- Confirming the finding and accepting the SQL patch stored the decision. `repository_modified` was false.
+- Publish stored a local report. GitHub was not called.
+
+Backend: 41 pytest tests passed, and Ruff was clean. Frontend: `tsc --noEmit` and ESLint were clean.
+
+## Implemented, mocked, and still pending
+
+| Area | State |
+| --- | --- |
+| Review queue, diff, findings, trace, human confirm/dismiss, patch accept/reject | Implemented. Exercised on the demo above. |
+| Sandbox for demo fixtures | Implemented for `trust_tier=demo_fixture` only. |
+| Gemini and Groq | Client, schema, timeout, and call budget are implemented. Tests use a fake HTTP API. A live key was not used here. |
+| GitHub App | Webhook signature, pinned SHA, check run, and comment are implemented. Tests use a fake GitHub API. No live installation was connected. |
+| Docker sandbox, PostgreSQL, Redis, OpenTelemetry, multi-user login | Described in Compose or reserved in config. Not running, and not a security boundary for untrusted pull requests. |
+
+Paste a Gemini key only in `backend/.env` as `PRISM_GEMINI_API_KEY`, set `PRISM_LLM_PROVIDER=gemini`, and restart the API. Settings should then show **Gemini key configured** as true. That switch does not turn on patch execution.
+
 ## Tests
 
 ```bash

@@ -2,6 +2,10 @@
 
 Status is what has been run, not what the product spec hoped for.
 
+## Verified demo
+
+On 13 Oct 2026 the running app completed `acme/billing-service` #142 on `deterministic-mock`. SQL injection was `reproduced` with a passing targeted test. Secret and shell patches stayed `needs_review`. Accepting the SQL patch returned `repository_modified: false`. The published report was `stored_locally_demo` and did not call GitHub. Backend pytest was 41 passed and Ruff was clean. Frontend `tsc` and ESLint were clean.
+
 ## Done
 
 - Domain model, Alembic revision, upgrade/downgrade test on SQLite.
