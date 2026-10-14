@@ -108,6 +108,54 @@ def test_docker_args_are_locked_down_and_subprocess_env_is_allowlisted(monkeypat
     assert args[args.index("image") if False else args.index("python:3.12-slim") + 1] == "timeout"
 
 
+def test_windows_spawn_does_not_use_preexec_fn(monkeypatch, tmp_path):
+    from app.services.sandbox import run_pytest
+
+    captured: dict = {}
+
+    class Fake:
+        pid = 1
+        returncode = 0
+
+        def communicate(self, timeout=None):
+            return b"", b""
+
+    def fake_popen(command, **kwargs):
+        captured.update(kwargs)
+        return Fake()
+
+    monkeypatch.setattr("app.services.sandbox.os.name", "nt")
+    monkeypatch.setattr("app.services.sandbox.subprocess.Popen", fake_popen)
+    result = run_pytest(tmp_path, ["tests/test_delivery.py"], timeout=5)
+    assert "preexec_fn" not in captured
+    assert "start_new_session" not in captured
+    assert captured["creationflags"] == 0x00000200
+    assert result.timed_out is False
+
+
+def test_posix_spawn_still_applies_resource_limits(monkeypatch, tmp_path):
+    from app.services.sandbox import run_pytest
+
+    captured: dict = {}
+
+    class Fake:
+        pid = 1
+        returncode = 0
+
+        def communicate(self, timeout=None):
+            return b"", b""
+
+    def fake_popen(command, **kwargs):
+        captured.update(kwargs)
+        return Fake()
+
+    monkeypatch.setattr("app.services.sandbox.os.name", "posix")
+    monkeypatch.setattr("app.services.sandbox.subprocess.Popen", fake_popen)
+    run_pytest(tmp_path, ["tests/test_delivery.py"], timeout=5)
+    assert captured["start_new_session"] is True
+    assert callable(captured["preexec_fn"])
+
+
 def test_sandbox_timeout_kills_the_process(tmp_path):
     from app.services.sandbox import run_pytest, write_tree
 

@@ -305,6 +305,9 @@ function FindingPanel({
         <p className="mt-1 text-[10px] text-muted-foreground">Labeled separately from observed evidence. Mock provider does not make a model call.</p>
       </section>
       <p className="text-xs leading-relaxed"><span className="text-muted-foreground">Remediation. </span>{finding.remediation}</p>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        Confirm and dismiss record a human decision on this finding. They do not run the sandbox and they do not accept a patch.
+      </p>
       <div className="flex gap-2">
         <Button size="sm" onClick={onConfirm} disabled={finding.status === "confirmed"}>Confirm</Button>
         <Button size="sm" variant="outline" onClick={onDismiss} disabled={finding.status === "dismissed"}>Dismiss</Button>

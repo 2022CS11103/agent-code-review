@@ -58,6 +58,43 @@ def test_billing_review_reproduces_sql_and_does_not_merge(session):
     assert report.redacted is True
 
 
+def test_sandbox_crash_records_an_attempt_without_blocking_finding_actions(client, session, monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise ValueError("preexec_fn is not supported on Windows platforms")
+
+    monkeypatch.setattr("app.services.pipeline.run_pytest", boom)
+    seed_demo(session, SessionLocal, process_history=False)
+    pull = session.query(PullRequest).filter(PullRequest.number == 142).one()
+    from app.services.actions import create_review
+
+    job, created = create_review(session, pull, workspace_id=pull.repository.workspace_id, trigger="manual", origin="live")
+    assert created
+    process_job(job.id, SessionLocal)
+    session.expire_all()
+    stored = session.get(ReviewJob, job.id)
+    assert stored.status == "completed", stored.error
+    patches = session.query(PatchProposal).filter(PatchProposal.job_id == job.id).all()
+    by_strategy = {item.strategy: item for item in patches}
+    sql = by_strategy["parameterize_sql"]
+    assert sql.attempt >= 1
+    assert sql.status == "error"
+    runs = session.query(ValidationRun).filter(ValidationRun.patch_id == sql.id).all()
+    assert runs
+    assert "preexec_fn" in runs[-1].notes
+    assert by_strategy["secret_from_environment"].attempt >= 1
+    assert by_strategy["shell_to_argv"].status == "needs_review"
+    detail = client.get(f"/api/v1/reviews/{job.id}")
+    finding = next(item for item in detail.json()["findings"] if item["rule_id"] == "sql_injection")
+    decision = client.post(f"/api/v1/findings/{finding['id']}/decision", json={"action": "confirm"})
+    assert decision.status_code == 200
+    assert decision.json()["finding"]["status"] == "confirmed"
+    blocked = client.post(f"/api/v1/patches/{sql.id}/decision", json={"action": "accept"})
+    assert blocked.status_code == 409
+    accepted = client.post(f"/api/v1/patches/{by_strategy['shell_to_argv'].id}/decision", json={"action": "accept"})
+    assert accepted.status_code == 200
+    assert accepted.json()["repository_modified"] is False
+
+
 def test_seed_history_stays_queued_until_the_worker_runs(session, monkeypatch):
     called = []
     monkeypatch.setattr("app.services.seed.process_job", lambda *args, **kwargs: called.append(args))

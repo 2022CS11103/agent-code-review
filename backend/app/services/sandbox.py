@@ -131,22 +131,14 @@ def run_pytest(workspace: Path, test_paths: list[str], timeout: int) -> SuiteRes
         *test_paths,
     ]
     started = time.monotonic()
-    proc = subprocess.Popen(
-        command,
-        cwd=workspace,
-        env=sandbox_env(workspace),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-        preexec_fn=_limits(timeout),
-    )
+    proc = _spawn(command, workspace, timeout)
     timed_out = False
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
         code = proc.returncode
     except subprocess.TimeoutExpired:
         timed_out = True
-        _kill_group(proc.pid)
+        _terminate(proc)
         stdout, stderr = proc.communicate()
         code = proc.returncode
     duration = int((time.monotonic() - started) * 1000)
@@ -166,6 +158,48 @@ def run_pytest(workspace: Path, test_paths: list[str], timeout: int) -> SuiteRes
         stderr=err,
         tests=tests,
     )
+
+
+def _spawn(command: list[str], workspace: Path, timeout: int) -> subprocess.Popen:
+    """Start pytest without POSIX-only options on Windows.
+
+    ``preexec_fn`` and ``start_new_session`` raise ValueError on Windows before
+    the child starts. The wall-clock timeout still applies there. CPU and address
+    limits stay on POSIX, where ``resource`` exists.
+    """
+    kwargs: dict = {
+        "cwd": workspace,
+        "env": sandbox_env(workspace),
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+    }
+    if os.name == "posix":
+        kwargs["start_new_session"] = True
+        kwargs["preexec_fn"] = _limits(timeout)
+    elif os.name == "nt":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+    return subprocess.Popen(command, **kwargs)
+
+
+def _terminate(proc: subprocess.Popen) -> None:
+    if os.name == "posix":
+        _kill_group(proc.pid)
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    try:
+        proc.kill()
+    except OSError:
+        return
 
 
 def _limits(timeout: int):

@@ -43,7 +43,7 @@ export default function ValidationPage() {
     <PageFrame
       eyebrow={`${data.repository.name} #${data.pull_request.number}`}
       title="Patch validation"
-      note="A passing test is not proof that a patch is production-safe. Test, lint, and security results are reported separately. Accepting a patch records a decision and does not modify the repository."
+      note="A passing test is not proof that a patch is production-safe. Test, lint, and security results are reported separately. Confirm and dismiss on the review page do not wait for these sandbox attempts. Accepting a patch records a decision and does not modify the repository."
       actions={
         <Link href={`/reviews/${id}`} className="text-xs underline">
           Back to review
@@ -76,6 +76,9 @@ function PatchBlock({ patch, onDecide }: { patch: Patch; onDecide: (id: string, 
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-sm font-medium">{patch.title}</h2>
           <span className="text-xs text-muted-foreground">{patch.status}</span>
+          <span className="text-xs text-muted-foreground">
+            {patch.attempt} {patch.attempt === 1 ? "attempt" : "attempts"}
+          </span>
           <span className="mono text-xs text-muted-foreground">{patch.strategy}</span>
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -106,7 +109,11 @@ function PatchBlock({ patch, onDecide }: { patch: Patch; onDecide: (id: string, 
       </div>
       <div className="px-4 py-4">
         <h3 className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Attempts</h3>
-        {patch.validations.length === 0 ? <p className="mt-2 text-xs text-muted-foreground">No validation run recorded.</p> : null}
+        {patch.validations.length === 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            No validation run recorded. Finding confirm and dismiss stay available on the review page.
+          </p>
+        ) : null}
         <ol className="mt-2 space-y-3">
           {patch.validations.map((run) => (
             <li key={run.id} className="rounded-md border p-3 text-xs">

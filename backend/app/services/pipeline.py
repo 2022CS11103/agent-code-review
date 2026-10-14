@@ -403,18 +403,26 @@ def _run(db: Session, job: ReviewJob) -> None:
     )
 
     for row, proposal in patch_rows:
-        _validate_patch(
-            db,
-            job,
-            row,
-            proposal,
-            files,
-            sources,
-            finding_rows[proposal["stable_key"]],
-            repo,
-            policy,
-            cap,
-        )
+        patch_id = row.id
+        finding_id = row.finding_id
+        rule_id = str(proposal.get("rule_id") or "")
+        job_id = job.id
+        try:
+            _validate_patch(
+                db,
+                job,
+                row,
+                proposal,
+                files,
+                sources,
+                finding_rows[proposal["stable_key"]],
+                repo,
+                policy,
+                cap,
+            )
+        except Exception as exc:
+            log.exception("patch validation failed for %s", rule_id)
+            _record_validation_crash(db, job_id, patch_id, finding_id, rule_id, exc)
     job.status = "completed"
     job.stage = "ready"
     job.finished_at = utcnow()
@@ -426,6 +434,67 @@ def _run(db: Session, job: ReviewJob) -> None:
         "ready",
         "Review is ready for a human decision. Nothing was merged.",
         payload={"job_id": job.id},
+    )
+
+
+def _record_validation_crash(db, job_id: str, patch_id: str, finding_id: str | None, rule_id: str, exc: Exception) -> None:
+    """Store the failed launch as its own attempt and leave the rest of the review runnable.
+
+    A sandbox crash used to abort the job before ``attempt`` left zero, which hid
+    every later patch and made finding decisions look tied to validation.
+    """
+    db.rollback()
+    job = db.get(ReviewJob, job_id)
+    patch = db.get(PatchProposal, patch_id)
+    if job is None or patch is None:
+        return
+    finding = db.get(Finding, finding_id) if finding_id else None
+    message = redact_text(f"{type(exc).__name__}: {exc}", limit=500)
+    latest = (
+        db.query(ValidationRun)
+        .filter(ValidationRun.patch_id == patch.id)
+        .order_by(ValidationRun.attempt.desc())
+        .first()
+    )
+    if latest is not None and latest.status in {"passed", "needs_review"}:
+        _emit(
+            db,
+            job,
+            "validate",
+            f"Validation for {rule_id} kept the recorded {latest.status} result after a later error. {message}",
+            level="warn",
+            agent="sandbox",
+        )
+        return
+    attempt = int(patch.attempt or 0) + 1
+    notes = f"Validation did not produce a sandbox result. {message}"
+    _store_run(
+        db,
+        patch,
+        attempt=attempt,
+        status="error",
+        notes=notes,
+        security_status="not_run",
+        lint_status="not_run",
+        suite=None,
+        baseline=None,
+        tests_selected=SUITES.get(rule_id, []),
+    )
+    patch.attempt = attempt
+    patch.status = "error"
+    patch.proof_scope = "not_executed"
+    patch.policy_notes = notes
+    if finding is not None:
+        finding.validation_state = "error"
+    db.commit()
+    _emit(
+        db,
+        job,
+        "validate",
+        f"Validation for {rule_id} stopped before a sandbox result. {message} Finding decisions were not changed.",
+        level="error",
+        agent="sandbox",
+        payload={"attempt": attempt, "status": "error"},
     )
 
 
