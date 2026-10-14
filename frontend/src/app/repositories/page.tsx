@@ -61,9 +61,15 @@ function RepositoriesPage() {
     <PageFrame
       eyebrow="Policy studio"
       title="Repositories"
-      note={github?.note ?? "Add a GitHub repository from this page, or review the local demo fixtures."}
-      actions={
-        <div className="flex flex-wrap items-center gap-2">
+      note="acme/billing-service and acme/auth-gateway are local demos. Your GitHub repositories are added from the box below."
+    >
+      <section className="border-b px-4 py-4">
+        <h2 className="text-sm font-medium">Add a repository from GitHub</h2>
+        <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+          {github?.note ??
+            "Add GitHub repository opens GitHub so you can create the PRISM app, install it on your repos, then sync open pull requests."}
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           {github && !github.app_configured ? (
             <form action={github.form_action} method="post">
               <input type="hidden" name="manifest" value={github.manifest} />
@@ -72,6 +78,7 @@ function RepositoriesPage() {
               </button>
             </form>
           ) : null}
+          {connect.isLoading ? <span className="text-xs text-muted-foreground">Loading the GitHub button…</span> : null}
           {github?.install_url ? (
             <a className={buttonVariants()} href={github.install_url} target="_blank" rel="noreferrer">
               Install on a repository
@@ -81,11 +88,12 @@ function RepositoriesPage() {
             {sync.isPending ? "Syncing" : "Sync from GitHub"}
           </Button>
         </div>
-      }
-    >
+      </section>
       {banner ? <p className="border-b px-4 py-3 text-sm">{banner}</p> : null}
       {connect.isError ? (
-        <p className="border-b px-4 py-3 text-sm text-destructive">{(connect.error as Error).message}</p>
+        <p className="border-b px-4 py-3 text-sm text-destructive">
+          The GitHub button did not load. Pull the latest code, then restart the API window and this site. {(connect.error as Error).message}
+        </p>
       ) : null}
       {items.length === 0 ? (
         <p className="p-4 text-sm text-muted-foreground">No repositories are connected to this workspace.</p>
