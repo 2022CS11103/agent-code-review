@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
+import { ChartNoAxesColumn, FolderGit2, GitPullRequestCreate, LayoutDashboard, ScrollText, Settings } from "lucide-react"
 import {
   Command,
   CommandDialog,
@@ -18,11 +19,12 @@ import type { CommandCenter } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const NAV = [
-  { href: "/", label: "Command" },
-  { href: "/repositories", label: "Repositories" },
-  { href: "/evaluations", label: "Evaluation" },
-  { href: "/audit", label: "Audit" },
-  { href: "/settings", label: "Settings" },
+  { href: "/", label: "Command", icon: LayoutDashboard },
+  { href: "/repositories", label: "Repositories", icon: FolderGit2 },
+  { href: "/evaluations", label: "Evaluation", icon: ChartNoAxesColumn },
+  { href: "/audit", label: "Audit", icon: ScrollText },
+  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/github", label: "GitHub account", icon: GitPullRequestCreate },
 ]
 
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -30,6 +32,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [queue, setQueue] = useState<CommandCenter["queue"]>([])
+  const [queueCount, setQueueCount] = useState<number | null>(null)
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -41,6 +44,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [])
+
+  useEffect(() => {
+    api<CommandCenter>("/command-center")
+      .then((data) => {
+        setQueue(data.queue)
+        setQueueCount(data.queue.length)
+      })
+      .catch(() => setQueueCount(null))
+  }, [pathname])
 
   useEffect(() => {
     if (!open) return
@@ -57,7 +69,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-dvh min-h-0 bg-background text-foreground">
-      <aside className="hidden h-full w-56 shrink-0 flex-col overflow-y-auto border-r border-border md:flex">
+      <aside className="hidden h-full w-56 shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
         <Link href="/" className="flex items-center gap-2 px-4 py-4">
           <Mark />
           <div>
@@ -65,25 +77,31 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Review system</div>
           </div>
         </Link>
+        <p className="px-4 pb-2 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Workspace</p>
         <nav className="flex flex-1 flex-col gap-0.5 px-2" aria-label="Primary">
           {NAV.map((item) => {
             const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)
+            const Icon = item.icon
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
-                  active && "bg-muted text-foreground",
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                  active && "bg-sidebar-accent text-sidebar-accent-foreground",
                 )}
               >
-                {item.label}
+                <Icon className="size-4 shrink-0" />
+                <span className="min-w-0 flex-1">{item.label}</span>
+                {item.href === "/" && queueCount !== null ? (
+                  <span className="rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">{queueCount}</span>
+                ) : null}
               </Link>
             )
           })}
         </nav>
-        <div className="border-t px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
-          Demo fixtures only. Human approval required. Tests are not proof of safety.
+        <div className="border-t border-sidebar-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+          Human approval required. Tests are not proof of safety.
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">

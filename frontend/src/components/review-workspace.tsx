@@ -170,8 +170,9 @@ export function ReviewWorkspace() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => router.push(`/reviews/${id}/trace`)}>Trace</Button>
-          <Button variant="outline" size="sm" onClick={() => router.push(`/reviews/${id}/validation`)}>Validation</Button>
+          <Button variant="outline" size="sm" onClick={() => router.push(`/reviews/${id}`)}>Findings</Button>
+          <Button variant="outline" size="sm" onClick={() => router.push(`/reviews/${id}/validation`)}>Patch & validation</Button>
+          <Button variant="outline" size="sm" onClick={() => router.push(`/reviews/${id}/trace`)}>Agent trace</Button>
           {stopped || data.job.status === "completed" ? (
             <Button variant="outline" size="sm" onClick={retry}>Retry</Button>
           ) : null}

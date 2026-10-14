@@ -67,7 +67,7 @@ def test_manifest_callback_stores_the_app_and_hides_the_key(client, session, mon
         follow_redirects=False,
     )
     assert response.status_code == 303
-    assert response.headers["location"] == "http://127.0.0.1:43123/repositories?github=connected"
+    assert response.headers["location"] == "http://127.0.0.1:43123/github?github=connected"
     stored = session.query(GithubAppCredential).one()
     assert stored.app_id == "4242"
     assert stored.slug == "prism-review"
@@ -87,7 +87,7 @@ def test_bad_manifest_code_redirects_without_storing(client, session):
         follow_redirects=False,
     )
     assert response.status_code == 303
-    assert response.headers["location"] == "http://127.0.0.1:43123/repositories?github=failed"
+    assert response.headers["location"] == "http://127.0.0.1:43123/github?github=failed"
     assert session.query(GithubAppCredential).count() == 0
 
 

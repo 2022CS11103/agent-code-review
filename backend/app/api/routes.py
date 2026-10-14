@@ -622,8 +622,8 @@ def github_manifest_callback(
     try:
         accept_manifest(db, code)
     except GithubClientError:
-        return RedirectResponse(f"{target}/repositories?github=failed", status_code=303)
-    return RedirectResponse(f"{target}/repositories?github=connected", status_code=303)
+        return RedirectResponse(f"{target}/github?github=failed", status_code=303)
+    return RedirectResponse(f"{target}/github?github=connected", status_code=303)
 
 
 @router.post("/github/sync")
