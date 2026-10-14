@@ -1,26 +1,92 @@
 "use client"
 
 import Link from "next/link"
-import { useQuery } from "@tanstack/react-query"
+import { useSearchParams } from "next/navigation"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Suspense, useState } from "react"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Notice, PageFrame } from "@/components/page-frame"
 import { api } from "@/lib/api"
-import type { RepositorySummary } from "@/lib/types"
+import type { GithubConnect, RepositorySummary } from "@/lib/types"
 
-export default function RepositoriesPage() {
-  const query = useQuery({
+export default function RepositoriesRoute() {
+  return (
+    <Suspense fallback={<Notice title="Loading repositories" />}>
+      <RepositoriesPage />
+    </Suspense>
+  )
+}
+
+function RepositoriesPage() {
+  const params = useSearchParams()
+  const githubStatus = params.get("github")
+  const returned =
+    githubStatus === "connected"
+      ? "GitHub App saved on this server. Install it on a repository, then sync."
+      : githubStatus === "failed"
+        ? "GitHub did not finish connecting. No credential was stored."
+        : null
+  const queryClient = useQueryClient()
+  const [syncBanner, setSyncBanner] = useState<string | null>(null)
+  const banner = syncBanner ?? returned
+  const repos = useQuery({
     queryKey: ["repositories"],
     queryFn: () => api<{ items: RepositorySummary[] }>("/repositories"),
   })
-  if (query.isLoading) return <Notice title="Loading repositories" />
-  if (query.isError) return <Notice title="Repositories could not be loaded" detail={(query.error as Error).message} />
-  const items = query.data?.items ?? []
+  const connect = useQuery({
+    queryKey: ["github-connect"],
+    queryFn: () => {
+      const origin = typeof window === "undefined" ? "http://127.0.0.1:43123" : window.location.origin
+      return api<GithubConnect>(`/github/connect?browser_origin=${encodeURIComponent(origin)}`)
+    },
+  })
+  const sync = useMutation({
+    mutationFn: () =>
+      api<{ installations: number; repositories: number; pulls_queued: number }>("/github/sync", { method: "POST" }),
+    onSuccess: async (result) => {
+      setSyncBanner(
+        `Synced ${result.repositories} repositories and queued ${result.pulls_queued} pull requests from ${result.installations} installations.`,
+      )
+      await queryClient.invalidateQueries({ queryKey: ["repositories"] })
+    },
+    onError: (error: Error) => setSyncBanner(error.message),
+  })
+
+  if (repos.isLoading) return <Notice title="Loading repositories" />
+  if (repos.isError) return <Notice title="Repositories could not be loaded" detail={(repos.error as Error).message} />
+  const items = repos.data?.items ?? []
+  const github = connect.data
 
   return (
     <PageFrame
       eyebrow="Policy studio"
       title="Repositories"
-      note="Demo repositories are local fixtures. Connecting a GitHub App is documented and not active in this build, so no install button is shown."
+      note={github?.note ?? "Add a GitHub repository from this page, or review the local demo fixtures."}
+      actions={
+        <div className="flex flex-wrap items-center gap-2">
+          {github && !github.app_configured ? (
+            <form action={github.form_action} method="post">
+              <input type="hidden" name="manifest" value={github.manifest} />
+              <button type="submit" className={buttonVariants()}>
+                Add GitHub repository
+              </button>
+            </form>
+          ) : null}
+          {github?.install_url ? (
+            <a className={buttonVariants()} href={github.install_url} target="_blank" rel="noreferrer">
+              Install on a repository
+            </a>
+          ) : null}
+          <Button type="button" variant="outline" disabled={!github?.app_configured || sync.isPending} onClick={() => sync.mutate()}>
+            {sync.isPending ? "Syncing" : "Sync from GitHub"}
+          </Button>
+        </div>
+      }
     >
+      {banner ? <p className="border-b px-4 py-3 text-sm">{banner}</p> : null}
+      {connect.isError ? (
+        <p className="border-b px-4 py-3 text-sm text-destructive">{(connect.error as Error).message}</p>
+      ) : null}
       {items.length === 0 ? (
         <p className="p-4 text-sm text-muted-foreground">No repositories are connected to this workspace.</p>
       ) : (

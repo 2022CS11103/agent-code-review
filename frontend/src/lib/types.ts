@@ -329,6 +329,7 @@ export type SettingsView = {
     app_id_configured: boolean
     private_key_configured: boolean
     app_configured: boolean
+    credential_source: string
     app_slug: string | null
     install_url: string | null
     webhook_secret_is_default: boolean
@@ -340,6 +341,17 @@ export type SettingsView = {
   analyzer_version: string
   prompt_version: string
   repair_cap: number
+}
+
+export type GithubConnect = {
+  app_configured: boolean
+  credential_source: string
+  install_url: string | null
+  form_action: string
+  manifest: string
+  webhook_url: string | null
+  delivery: string
+  note: string
 }
 
 export type PullDetail = {

@@ -67,6 +67,7 @@ export default function SettingsPage() {
             rows={[
               ["API base", data.github.api_base],
               ["App configured", String(data.github.app_configured)],
+              ["Credential source", data.github.credential_source],
               ["App id configured", String(data.github.app_id_configured)],
               ["Private key configured", String(data.github.private_key_configured)],
               ["Install URL", data.github.install_url ?? "Set PRISM_GITHUB_APP_SLUG"],

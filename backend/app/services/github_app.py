@@ -18,23 +18,92 @@ from app.services.github_client import GithubClientError, HttpGithubClient
 
 _lock = threading.Lock()
 _tokens: dict[int, tuple[str, float]] = {}
+_stored: dict[str, str] | None = None
 
 
-def private_key() -> str | None:
+def remember_stored_app(*, app_id: str, slug: str, private_key: str, webhook_secret: str) -> None:
+    global _stored
+    _stored = {
+        "app_id": str(app_id),
+        "slug": slug,
+        "private_key": private_key,
+        "webhook_secret": webhook_secret,
+    }
+    clear_token_cache()
+
+
+def clear_stored_app() -> None:
+    global _stored
+    _stored = None
+    clear_token_cache()
+
+
+def load_stored_app(db) -> None:
+    from app.models import GithubAppCredential
+
+    row = db.query(GithubAppCredential).order_by(GithubAppCredential.created_at.desc()).first()
+    if row is None:
+        clear_stored_app()
+        return
+    remember_stored_app(
+        app_id=row.app_id,
+        slug=row.slug,
+        private_key=row.private_key,
+        webhook_secret=row.webhook_secret,
+    )
+
+
+def resolved_credentials() -> tuple[str | None, str | None, str | None, str | None]:
+    """App id, private key, slug, and webhook secret. A saved manifest wins over the environment."""
+    if _stored is not None:
+        return _stored.get("app_id"), _stored.get("private_key"), _stored.get("slug"), _stored.get("webhook_secret")
     settings = get_settings()
+    key = _env_private_key(settings)
+    return settings.github_app_id, key, settings.github_app_slug, None
+
+
+def _env_private_key(settings) -> str | None:
     if settings.github_app_private_key:
         return settings.github_app_private_key.replace("\\n", "\n")
     if settings.github_app_private_key_path:
         path = Path(settings.github_app_private_key_path)
-        if not path.is_file():
-            return None
-        return path.read_text()
+        if path.is_file():
+            return path.read_text()
     return None
 
 
+def private_key() -> str | None:
+    return resolved_credentials()[1]
+
+
+def resolved_app_id() -> str | None:
+    return resolved_credentials()[0]
+
+
+def app_slug() -> str | None:
+    slug = resolved_credentials()[2]
+    if isinstance(slug, str) and slug.replace("-", "").isalnum():
+        return slug
+    return None
+
+
+def webhook_secret() -> str:
+    stored = resolved_credentials()[3]
+    if stored:
+        return stored
+    return get_settings().github_webhook_secret
+
+
+def credential_source() -> str:
+    if _stored is not None and _stored.get("private_key") and _stored.get("app_id"):
+        return "saved"
+    if get_settings().github_app_id and _env_private_key(get_settings()):
+        return "environment"
+    return "none"
+
+
 def app_configured() -> bool:
-    settings = get_settings()
-    return bool(settings.github_app_id and private_key())
+    return bool(resolved_app_id() and private_key())
 
 
 def build_app_jwt(app_id: str, key: str, now: int | None = None) -> str:
@@ -65,9 +134,10 @@ def installation_token(installation_id: int, *, transport=None, sleeper=None, no
             return cached[0]
     settings = get_settings()
     key = private_key()
-    if not settings.github_app_id or not key:
+    identifier = resolved_app_id()
+    if not identifier or not key:
         raise GithubClientError("GitHub App credentials are not configured")
-    app_jwt = build_app_jwt(settings.github_app_id, key)
+    app_jwt = build_app_jwt(identifier, key)
     client = HttpGithubClient(
         app_jwt,
         base_url=settings.github_api_base,

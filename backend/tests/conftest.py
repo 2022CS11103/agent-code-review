@@ -20,6 +20,9 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture(autouse=True)
 def reset_database():
+    from app.services.github_app import clear_stored_app
+
+    clear_stored_app()
     get_settings.cache_clear()
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

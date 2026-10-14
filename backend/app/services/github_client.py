@@ -125,6 +125,29 @@ class HttpGithubClient:
             raise GithubClientError("Unexpected review response")
         return data
 
+    def list_installations(self) -> list:
+        data = self._json("GET", "/app/installations?per_page=100")
+        if not isinstance(data, list):
+            raise GithubClientError("Unexpected installations payload")
+        return data
+
+    def list_installation_repositories(self, installation_id: int) -> tuple[list, bool]:
+        if isinstance(installation_id, bool) or not isinstance(installation_id, int) or installation_id <= 0:
+            raise GithubClientError("Invalid installation id")
+        data = self._json("GET", f"/app/installations/{installation_id}/repositories?per_page=100")
+        if not isinstance(data, dict) or not isinstance(data.get("repositories"), list):
+            raise GithubClientError("Unexpected installation repositories payload")
+        repos = data["repositories"]
+        total = data.get("total_count")
+        truncated = isinstance(total, int) and total > len(repos)
+        return repos, truncated
+
+    def list_open_pulls(self, owner: str, repo: str) -> list:
+        data = self._json("GET", f"/repos/{_segment(owner)}/{_segment(repo)}/pulls?state=open&per_page=10")
+        if not isinstance(data, list):
+            raise GithubClientError("Unexpected pull request list")
+        return data
+
     def create_installation_token(self, installation_id: int) -> dict:
         if isinstance(installation_id, bool) or not isinstance(installation_id, int) or installation_id <= 0:
             raise GithubClientError("Invalid installation id")

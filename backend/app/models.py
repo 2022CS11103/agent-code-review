@@ -407,6 +407,19 @@ class EvaluationRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class GithubAppCredential(Base):
+    """One GitHub App created from the in-product manifest. The key never leaves the API."""
+
+    __tablename__ = "github_app_credentials"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    app_id: Mapped[str] = mapped_column(String(32), unique=True)
+    slug: Mapped[str] = mapped_column(String(80))
+    private_key: Mapped[str] = mapped_column(Text)
+    webhook_secret: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class WebhookDelivery(Base):
     __tablename__ = "webhook_deliveries"
 

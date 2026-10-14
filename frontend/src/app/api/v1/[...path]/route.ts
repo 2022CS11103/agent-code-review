@@ -22,6 +22,8 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
   const outgoing = new Headers()
   const responseType = response.headers.get("content-type")
   if (responseType) outgoing.set("content-type", responseType)
+  const location = response.headers.get("location")
+  if (location) outgoing.set("location", location)
   outgoing.set("cache-control", "no-cache, no-transform")
   outgoing.set("x-accel-buffering", "no")
   return new Response(response.body, { status: response.status, headers: outgoing })

@@ -20,7 +20,7 @@ On 13 Oct 2026 the running app completed `acme/billing-service` #142 on `determi
 - Subprocess validation for demo fixtures, including the SQL harness (baseline fails, patched test passes). Docker argument builder unit-tested. Untrusted repos are not executed.
 - Human confirm, dismiss, reanalyze, patch edit, accept, reject, local report. Accept cannot modify the repo.
 - Webhook HMAC, delivery idempotency, GitHub host allowlist.
-- GitHub App JWT exchange, installation webhooks, pull-request fetch at the pinned SHA, check runs, and summary comments. Mocked API tests cover this. A live GitHub repository was not connected here.
+- GitHub App JWT exchange, installation webhooks, pull-request fetch at the pinned SHA, check runs, and summary comments. The Repositories page can create an App from a manifest, install it, and sync open pull requests. Mocked API tests cover this. A live GitHub repository was not connected here.
 - Evaluation fixture suite with precision, recall, and residual risks.
 - Audit log, settings, command center metrics computed from stored jobs. Null rates when the denominator is zero.
 - Next.js command center, pull-request workspace, diff, trace, validation studio, policy editor, evaluation, audit, settings. Command palette. Live refetch and SSE.

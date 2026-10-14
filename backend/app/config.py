@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     github_app_slug: str | None = None
     github_app_private_key: str | None = None
     github_app_private_key_path: str | None = None
+    # Public https origin GitHub can call. Empty means Sync, not inbound webhooks.
+    public_base_url: str = ""
     llm_provider: str = "mock"
     llm_model: str = "gpt-4.1-mini"
     llm_timeout_seconds: int = 20

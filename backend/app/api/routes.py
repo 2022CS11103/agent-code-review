@@ -45,7 +45,7 @@ from app.services.queries import (
 from app.services.signatures import verify_github_signature
 from app.versions import ANALYZER_VERSION, PROMPT_VERSION
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -509,8 +509,10 @@ async def github_webhook(request: Request, db: Session = Depends(db_session)) ->
     settings = get_settings()
     if len(body) > settings.request_max_bytes:
         raise APIError(413, "payload_too_large", "Webhook body exceeds the size limit.")
+    from app.services.github_app import webhook_secret
+
     signature = request.headers.get("x-hub-signature-256")
-    if not verify_github_signature(settings.github_webhook_secret, body, signature):
+    if not verify_github_signature(webhook_secret(), body, signature):
         audit(db, None, None, "webhook_rejected", "webhook", request.headers.get("x-github-delivery"), {"reason": "bad_signature"})
         db.commit()
         raise APIError(401, "bad_signature", "Webhook signature did not match.")
@@ -565,21 +567,74 @@ def _llm_settings(settings) -> dict:
 
 
 def _github_settings(settings) -> dict:
-    from app.services.github_app import app_configured, private_key
+    from app.services.github_app import (
+        app_configured,
+        app_slug,
+        credential_source,
+        private_key,
+        resolved_app_id,
+        webhook_secret,
+    )
 
-    slug = settings.github_app_slug if isinstance(settings.github_app_slug, str) else None
-    safe_slug = slug if slug and slug.replace("-", "").isalnum() else None
-    return {
+    slug = app_slug()
+    secret = webhook_secret()
+    view = {
         "api_base": settings.github_api_base,
-        "app_id_configured": bool(settings.github_app_id),
+        "app_id_configured": bool(resolved_app_id()),
         "private_key_configured": bool(private_key()),
         "app_configured": app_configured(),
-        "app_slug": safe_slug,
-        "install_url": f"https://github.com/apps/{safe_slug}/installations/new" if safe_slug else None,
-        "webhook_secret_is_default": settings.github_webhook_secret == "dev-only-webhook-secret",
+        "credential_source": credential_source(),
+        "app_slug": slug,
+        "install_url": f"https://github.com/apps/{slug}/installations/new" if slug else None,
+        "webhook_secret_is_default": secret == "dev-only-webhook-secret",
         "permissions": ["metadata:read", "contents:read", "pull_requests:write", "checks:write"],
-        "note": "Installation tokens stay in the API process. They are not sent to the browser or the model.",
+        "note": (
+            "Add a repository from the Repositories page. "
+            "The App private key and webhook secret stay on the server. "
+            "Installation tokens stay in the API process. They are not sent to the browser or the model."
+        ),
     }
+    encoded = str(view)
+    if secret and secret != "dev-only-webhook-secret" and secret in encoded:
+        raise RuntimeError("Settings view included the webhook secret")
+    if private_key() and "PRIVATE KEY" in encoded:
+        raise RuntimeError("Settings view included the GitHub private key")
+    return view
+
+
+@router.get("/github/connect")
+def github_connect(browser_origin: str | None = None) -> dict:
+    from app.services.github_connect import connect_view
+
+    return connect_view(browser_origin)
+
+
+@router.get("/github/manifest/callback")
+def github_manifest_callback(
+    code: str = "",
+    return_to: str = "",
+    db: Session = Depends(db_session),
+):
+    from app.services.github_client import GithubClientError
+    from app.services.github_connect import accept_manifest, browser_return
+
+    target = browser_return(return_to)
+    try:
+        accept_manifest(db, code)
+    except GithubClientError:
+        return RedirectResponse(f"{target}/repositories?github=failed", status_code=303)
+    return RedirectResponse(f"{target}/repositories?github=connected", status_code=303)
+
+
+@router.post("/github/sync")
+def github_sync(db: Session = Depends(db_session)) -> dict:
+    from app.services.github_client import GithubClientError
+    from app.services.github_connect import sync_installations
+
+    try:
+        return sync_installations(db)
+    except GithubClientError as exc:
+        raise APIError(409, "github_not_ready", str(exc)[:300]) from exc
 
 
 def _repo_or_404(db: Session, workspace: Workspace, repository_id: str) -> Repository:

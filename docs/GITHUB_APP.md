@@ -2,6 +2,18 @@
 
 Demo mode does not need an App. With no App id and no private key, PRISM still reviews the seeded repositories and stores reports locally.
 
+## From the Repositories page
+
+**Add GitHub repository** posts a GitHub App manifest to `https://github.com/settings/apps/new`. After you confirm it, GitHub sends the browser back to PRISM. The API exchanges that code for the App id, private key, and webhook secret, and stores them in the database. Settings shows that the App is configured. It does not show the key or the secret.
+
+**Install on a repository** opens GitHub’s install page for that App. Choose the repositories you want reviewed.
+
+**Sync from GitHub** lists those installations and open pull requests through `api.github.com` and queues a review for each open pull request. Sync does not need a public webhook URL. A live call was not made from the environment that added this button. The tests mock `api.github.com`.
+
+Set `PRISM_PUBLIC_BASE_URL` to a public `https` origin before creating the App if you want GitHub to deliver webhooks. A localhost value is ignored. Untrusted repository code is still not executed, and publish still cannot merge.
+
+Manual environment variables below remain available when you would rather create the App yourself. A saved manifest is used instead of those variables.
+
 A live installation was not exercised in the environment that added this code. The tests in `backend/tests/test_github_app.py` mock `api.github.com`. Treat a real repository check as still open until you have run the steps below against a repository you control.
 
 ## Permissions

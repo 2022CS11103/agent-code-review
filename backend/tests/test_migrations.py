@@ -24,7 +24,15 @@ def test_alembic_upgrade_and_downgrade(tmp_path, monkeypatch):
 
     engine = create_engine(url)
     names = set(inspect(engine).get_table_names())
-    assert {"users", "review_jobs", "findings", "patch_proposals", "validation_runs", "audit_events"} <= names
+    assert {
+        "users",
+        "review_jobs",
+        "findings",
+        "patch_proposals",
+        "validation_runs",
+        "audit_events",
+        "github_app_credentials",
+    } <= names
 
     command.downgrade(cfg, "base")
     remaining = set(inspect(engine).get_table_names())

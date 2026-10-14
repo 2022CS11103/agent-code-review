@@ -69,8 +69,6 @@ def migrate() -> None:
 async def lifespan(app: FastAPI):
     configure_logging()
     settings = get_settings()
-    if settings.github_webhook_secret == "dev-only-webhook-secret":
-        log.warning("PRISM_GITHUB_WEBHOOK_SECRET is the dev default. Set a real secret before exposing webhooks.")
     try:
         migrate()
         db = SessionLocal()
@@ -79,6 +77,11 @@ async def lifespan(app: FastAPI):
         log.exception("Startup database step failed. The API will still listen.")
     else:
         try:
+            from app.services.github_app import load_stored_app, webhook_secret
+
+            load_stored_app(db)
+            if webhook_secret() == "dev-only-webhook-secret":
+                log.warning("PRISM_GITHUB_WEBHOOK_SECRET is the dev default. Set a real secret before exposing webhooks.")
             fail_interrupted(db)
             if settings.auto_seed:
                 # Queue the demo history review. The worker runs it after the
